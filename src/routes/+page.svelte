@@ -1,13 +1,21 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
 
-  let name = $state("");
-  let greetMsg = $state("");
+  let steamPath = $state<string | null>(null);
+  let error = $state<{ kind: string; msg?: string } | null>(null);
+  let loading = $state(false);
 
-  async function greet(event: Event) {
-    event.preventDefault();
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsg = await invoke("greet", { name });
+  async function fetchSteamPath() {
+    loading = true;
+    error = null;
+    steamPath = null;
+    try {
+      steamPath = await invoke<string>("steam_get_install_path");
+    } catch (e) {
+      error = e as { kind: string; msg?: string };
+    } finally {
+      loading = false;
+    }
   }
 </script>
 
@@ -27,11 +35,15 @@
   </div>
   <p>Click on the Tauri, Vite, and SvelteKit logos to learn more.</p>
 
-  <form class="row" onsubmit={greet}>
-    <input id="greet-input" placeholder="Enter a name..." bind:value={name} />
-    <button type="submit">Greet</button>
-  </form>
-  <p>{greetMsg}</p>
+  <button onclick={fetchSteamPath} disabled={loading}>
+    {loading ? "Looking up..." : "Find Steam install path"}
+  </button>
+
+  {#if steamPath}
+    <p>Steam is installed at: <code>{steamPath}</code></p>
+  {:else if error}
+    <p>Error: <strong>{error.kind}</strong>{error.msg ? ` — ${error.msg}` : ""}</p>
+  {/if}
 </main>
 
 <style>
@@ -98,7 +110,6 @@ h1 {
   text-align: center;
 }
 
-input,
 button {
   border-radius: 8px;
   border: 1px solid transparent;
@@ -124,13 +135,8 @@ button:active {
   background-color: #e8e8e8;
 }
 
-input,
 button {
   outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -143,7 +149,6 @@ button {
     color: #24c8db;
   }
 
-  input,
   button {
     color: #ffffff;
     background-color: #0f0f0f98;
