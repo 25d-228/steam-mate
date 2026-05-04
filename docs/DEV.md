@@ -1,4 +1,4 @@
-# SteamMate dev reference
+# steam-mate dev reference
 
 > One-stop reference for v0.1 implementation.
 
@@ -103,11 +103,11 @@ cargo install tauri-cli --version "^2.0" --locked
 
 # Scaffold
 cargo create-tauri-app
-#   name:     SteamMate
+#   name:     steam-mate
 #   id:       com.<your-handle>.steammate
 #   frontend: TypeScript / Svelte
 #   pkg mgr:  pnpm
-cd SteamMate
+cd steam-mate
 pnpm install
 
 # Run
@@ -115,7 +115,7 @@ pnpm tauri dev      # HMR + Rust rebuild on save
 pnpm tauri build    # release binary + .msi
 ```
 
-**`Cargo.lock` IS committed** — SteamMate is a binary, not a library.
+**`Cargo.lock` IS committed** — steam-mate is a binary, not a library.
 
 ### `src-tauri/Cargo.toml`
 
@@ -492,7 +492,7 @@ src-tauri/tests/fixtures/
 
 ### v0.1 manual E2E checklist (real Win11 install)
 
-1. Fresh install. Open SteamMate. `/steam` shows real Steam accounts.
+1. Fresh install. Open steam-mate. `/steam` shows real Steam accounts.
 2. Click an account. Steam closes (visible). New Steam launches signed in to clicked account.
 3. `clear_login`. Click another account. Steam relaunches at login screen with username pre-filled.
 4. Open `/games/master-duel`. All Konami account folders show. CSV content visible.
@@ -504,7 +504,7 @@ src-tauri/tests/fixtures/
 
 ## Out of scope (forever)
 
-These overlap with Watt Toolkit but SteamMate explicitly will **not** ship them:
+These overlap with Watt Toolkit but steam-mate explicitly will **not** ship them:
 
 - TOTP / Steam Guard authenticator (security-sensitive; punt to dedicated tools)
 - Network accelerator / proxy
@@ -524,4 +524,4 @@ Linux/macOS path discovery, `registry.vdf` patching (replaces `winreg` on those 
 **v0.3 — Watt Toolkit parity:**
 Family Share manager, desktop-shortcut composition with avatar `.ico`, beyond-Steam platforms (Battle.net/EGS/Riot via JSON config), account import/export, manage `loginusers.vdf` directly (delete remembered user, mark `AllowAutoLogin=0`).
 
-**Stretch:** CLI mode (`SteamMate --switch <account>`), headless tray-only daemon, Tauri auto-updater, FFXIV/Genshin game modules, localized UI (zh-CN, ja, en).
+**Stretch:** CLI mode (`steam-mate --switch <account>`), headless tray-only daemon, Tauri auto-updater, FFXIV/Genshin game modules, localized UI (zh-CN, ja, en).
