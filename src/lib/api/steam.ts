@@ -8,3 +8,7 @@ export function getInstallPath(): Promise<string> {
 export function listAccounts(): Promise<SteamAccount[]> {
   return invoke<SteamAccount[]>("steam_list_accounts");
 }
+
+export function clearLogin(): Promise<void> {
+  return invoke<void>("steam_clear_login");
+}

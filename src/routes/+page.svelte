@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { getInstallPath, listAccounts } from "$lib/api/steam";
+  import { getInstallPath, listAccounts, clearLogin } from "$lib/api/steam";
   import type { SteamAccount, AppError } from "$lib/api/types";
 
   let steamPath = $state<string | null>(null);
   let accounts = $state<SteamAccount[]>([]);
+  let cleared = $state(false);
   let error = $state<AppError | null>(null);
   let loadingPath = $state(false);
   let loadingAccounts = $state(false);
+  let loadingClear = $state(false);
 
   async function fetchSteamPath() {
     loadingPath = true;
@@ -31,6 +33,20 @@
       error = e as AppError;
     } finally {
       loadingAccounts = false;
+    }
+  }
+
+  async function clearAutoLogin() {
+    loadingClear = true;
+    error = null;
+    cleared = false;
+    try {
+      await clearLogin();
+      cleared = true;
+    } catch (e) {
+      error = e as AppError;
+    } finally {
+      loadingClear = false;
     }
   }
 </script>
@@ -58,10 +74,17 @@
     <button onclick={fetchAccounts} disabled={loadingAccounts}>
       {loadingAccounts ? "Loading..." : "List Steam accounts"}
     </button>
+    <button onclick={clearAutoLogin} disabled={loadingClear}>
+      {loadingClear ? "Clearing..." : "Clear Steam auto-login"}
+    </button>
   </div>
 
   {#if steamPath}
     <p>Steam is installed at: <code>{steamPath}</code></p>
+  {/if}
+
+  {#if cleared}
+    <p><em>Steam auto-login cleared. Next Steam launch will show the login screen.</em></p>
   {/if}
 
   {#if accounts.length > 0}
