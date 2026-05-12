@@ -4,7 +4,7 @@ use std::fs;
 
 use crate::error::{AppError, AppResult};
 use crate::steam::account::SteamAccount;
-use crate::steam::{paths, vdf};
+use crate::steam::{paths, registry, vdf};
 
 /// Return Steam's install directory as a string.
 ///
@@ -28,4 +28,15 @@ pub async fn steam_list_accounts() -> AppResult<Vec<SteamAccount>> {
     let text = fs::read_to_string(&path)
         .map_err(|_| AppError::SteamNotInstalled)?;
     vdf::parse_loginusers(&text)
+}
+
+/// Blank Steam's "remembered auto-login user" so the next launch lands at the
+/// login screen.
+///
+/// Thin wrapper over [`registry::clear_auto_login_user`]. Doesn't touch
+/// `loginusers.vdf` or kill Steam — Steam picks up the change on its own
+/// next start.
+#[tauri::command]
+pub async fn steam_clear_login() -> AppResult<()> {
+    registry::clear_auto_login_user()
 }

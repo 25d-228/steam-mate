@@ -16,6 +16,7 @@ pub fn run() {
             greet,
             steam::commands::steam_get_install_path,
             steam::commands::steam_list_accounts,
+            steam::commands::steam_clear_login,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
