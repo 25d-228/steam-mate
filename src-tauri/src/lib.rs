@@ -15,6 +15,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             steam::commands::steam_get_install_path,
+            steam::commands::steam_list_accounts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

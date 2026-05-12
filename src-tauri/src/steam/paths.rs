@@ -22,3 +22,14 @@ pub fn get_steam_install_path() -> AppResult<PathBuf> {
         .map_err(|_| AppError::SteamNotInstalled)?;
     Ok(PathBuf::from(path))
 }
+
+/// Path to `<steam-install>\config\loginusers.vdf`.
+///
+/// Doesn't check whether the file actually exists — that's the
+/// parser's concern (returns `AppError::SteamNotInstalled` if
+/// the file is missing when read).
+pub fn loginusers_vdf_path() -> AppResult<PathBuf> {
+    Ok(get_steam_install_path()?
+        .join("config")
+        .join("loginusers.vdf"))
+}
