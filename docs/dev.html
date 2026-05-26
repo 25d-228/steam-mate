@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building steam-mate — a technical build guide</title>
+<style>
+  /* ============================================================
+     steam-mate — build guide, typeset as a technical report.
+     Readable serif body (Georgia), ink on warm paper, numbered
+     sections, booktabs tables, and a restrained Solarized syntax
+     theme. Self-contained; opens offline; no scripts.
+     ============================================================ */
+  :root{
+    --paper:#fdf6e3; --paper-2:#f6efd6; --inline-bg:rgba(101,123,131,.10);
+    --rule:#cabf99; --rule-soft:#ddd5b8;
+    --ink:#2a2722; --ink-strong:#171510; --soft:#6d695c;
+    --link:#1d6fa8; --amber:#946b00; --red:#b62a22; --green:#5d6c00; --violet:#5b5fae;
+
+    /* syntax theme (muted on cream) */
+    --c-key:#6f7d00; --c-type:#9a6f0d; --c-fn:#1d6fa8; --c-str:#1f7a72;
+    --c-num:#b02d72; --c-attr:#b1561a; --c-prop:#46708d; --c-inline:#356b64;
+
+    --serif:Georgia,"Iowan Old Style","Palatino Linotype",Palatino,Cambria,"Times New Roman",serif;
+    --mono:"Cascadia Mono",Consolas,"Fira Code","Liberation Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#002b36; --paper-2:#06303a; --inline-bg:rgba(131,148,150,.14);
+      --rule:#1b4a55; --rule-soft:#0e3b46;
+      --ink:#b1bab2; --ink-strong:#eee8d5; --soft:#8a958c;
+      --link:#4ea6dd; --amber:#c79a2e; --red:#e0635c; --green:#9aab3a; --violet:#9a9ed6;
+      --c-key:#859900; --c-type:#b58900; --c-fn:#4ea6dd; --c-str:#2aa198;
+      --c-num:#d33682; --c-attr:#cb4b16; --c-prop:#6c9bd1; --c-inline:#2aa198;
+    }
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--serif); font-size:18px; line-height:1.72;
+    counter-reset:listing table;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .page{max-width:744px;margin:0 auto;padding:60px 28px 88px}
+
+  p{margin:0 0 1em;text-align:justify;hyphens:auto}
+  a{color:var(--link);text-decoration:none}
+  a:hover{text-decoration:underline;text-underline-offset:2px}
+  b,strong{color:var(--ink-strong);font-weight:700}
+
+  code{font-family:var(--mono);font-size:.82em;background:var(--inline-bg);
+    padding:.07em .36em;border-radius:3px;color:var(--c-inline);word-break:break-word}
+
+  /* ---------- front matter ---------- */
+  .overline{font-variant:small-caps;letter-spacing:.14em;font-size:.86rem;font-weight:700;
+    color:var(--violet);margin:0 0 .5em;text-align:center}
+  h1.title{font-size:2.55rem;line-height:1.1;font-weight:700;color:var(--ink-strong);
+    text-align:center;margin:0 0 .3em;letter-spacing:-.005em}
+  .subtitle{font-style:italic;font-size:1.2rem;color:var(--ink);text-align:center;
+    max-width:32ch;margin:0 auto .9em;line-height:1.4}
+  .meta{font-variant:small-caps;letter-spacing:.05em;font-size:.9rem;color:var(--soft);text-align:center;margin:0}
+  .toprule{border:none;border-top:3px double var(--ink-strong);margin:1.6em 0 0;opacity:.8}
+
+  .abstract{margin:1.9em 2.2em;font-size:1rem;color:var(--ink)}
+  @media(max-width:620px){.abstract{margin:1.7em .2em}}
+  .abstract .run{font-variant:small-caps;letter-spacing:.05em;font-weight:700;color:var(--ink-strong)}
+  .overview{margin:1.7em 2.2em}
+  @media(max-width:620px){.overview{margin:1.7em .2em}}
+  .overview .run{font-variant:small-caps;letter-spacing:.05em;font-weight:700;color:var(--ink-strong);
+    font-size:.92rem;display:block;margin-bottom:.45em}
+  .overview dl{margin:0}
+  .overview dt{font-weight:700;color:var(--ink-strong)}
+  .overview dd{margin:.12em 0 .85em;text-align:justify;hyphens:auto}
+
+  /* ---------- contents ---------- */
+  .toc{margin:2.4em 0;padding:1.15em 1.4em;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+  .toc h2{font-variant:small-caps;letter-spacing:.08em;font-size:1.05rem;font-weight:700;color:var(--ink-strong);
+    margin:0 0 .6em;text-align:center}
+  .toc ol{list-style:none;margin:0;padding:0;columns:2;column-gap:2.4em}
+  @media(max-width:620px){.toc ol{columns:1}}
+  .toc li{display:flex;gap:.7em;padding:.2em 0;break-inside:avoid;font-size:.98rem}
+  .toc .n{flex:none;width:1.7em;text-align:right;color:var(--soft);font-variant-numeric:lining-nums}
+  .toc a{color:var(--ink)} .toc a:hover{color:var(--link)}
+  .toc .app{color:var(--soft);font-variant:small-caps;letter-spacing:.03em}
+
+  /* ---------- sections ---------- */
+  h2.sec{font-size:1.5rem;font-weight:700;color:var(--ink-strong);line-height:1.22;
+    margin:2.6em 0 .7em;padding-bottom:.22em;border-bottom:1px solid var(--rule)}
+  h2.sec .n{color:var(--soft);font-variant-numeric:lining-nums;margin-right:.55em;font-weight:700}
+  h2.sec.appendix{border-bottom-style:double;border-bottom-width:2px}
+  h3.sub{font-size:1.1rem;font-weight:700;color:var(--ink-strong);margin:1.55em 0 .25em;font-style:italic}
+  .lead{color:var(--soft);font-style:italic;margin:.1em 0 1em;text-align:left}
+
+  ul,ol{margin:.65em 0 1em;padding-left:1.5em}
+  li{margin:.32em 0}
+  li::marker{color:var(--soft)}
+
+  /* ---------- listings (code) ---------- */
+  figure{margin:1.35em 0}
+  figure.listing figcaption{font-style:italic;color:var(--soft);font-size:.88rem;margin-bottom:.42em}
+  figure.listing figcaption::before{counter-increment:listing;content:"Listing " counter(listing) ". ";
+    font-style:normal;font-variant:small-caps;letter-spacing:.04em;color:var(--ink-strong);font-weight:700}
+  pre.code{margin:0;background:var(--paper-2);border:1px solid var(--rule);border-radius:5px;
+    padding:.9em 1.1em;overflow-x:auto;white-space:pre;
+    font-family:var(--mono);font-size:.82rem;line-height:1.62;color:var(--ink);text-align:left;hyphens:none;
+    -webkit-font-smoothing:auto}
+  pre.code code{background:none;padding:0;font-size:1em;color:inherit;border-radius:0}
+
+  /* syntax tokens */
+  .cm{color:var(--soft);font-style:italic}
+  .k {color:var(--c-key)}
+  .t {color:var(--c-type)}
+  .fn{color:var(--c-fn)}
+  .s {color:var(--c-str)}
+  .num{color:var(--c-num)}
+  .at{color:var(--c-attr)}
+  .key{color:var(--c-prop)}
+
+  /* ---------- notes ---------- */
+  .note{margin:1.25em 0;padding:.2em 0 .2em 1.1em;border-left:3px solid var(--rule);
+    font-size:.98rem;line-height:1.6}
+  .note .lbl{font-variant:small-caps;font-weight:700;letter-spacing:.04em;margin-right:.15em}
+  .note.warn{border-left-color:var(--amber)} .note.warn .lbl{color:var(--amber)}
+  .note.danger{border-left-color:var(--red)} .note.danger .lbl{color:var(--red)}
+  .note.info{border-left-color:var(--link)} .note.info .lbl{color:var(--link)}
+  .note.tip{border-left-color:var(--green)} .note.tip .lbl{color:var(--green)}
+
+  /* ---------- tables (booktabs) ---------- */
+  figure.table figcaption{font-style:italic;color:var(--soft);font-size:.88rem;margin-bottom:.45em}
+  figure.table figcaption::before{counter-increment:table;content:"Table " counter(table) ". ";
+    font-style:normal;font-variant:small-caps;letter-spacing:.04em;color:var(--ink-strong);font-weight:700}
+  .tw{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:.9rem;
+    border-top:2px solid var(--ink-strong);border-bottom:2px solid var(--ink-strong)}
+  th,td{text-align:left;vertical-align:top;padding:.48em .7em}
+  th{color:var(--ink-strong);font-weight:700;border-bottom:1px solid var(--ink-strong);
+    font-variant:small-caps;letter-spacing:.03em}
+  td:first-child{color:var(--ink-strong)}
+  td code{font-size:.85em}
+  .muted{color:var(--soft)}
+
+  /* ---------- appendix lists ---------- */
+  ol.gotchas li{margin:.5em 0}
+  .roadmap p{margin:.55em 0;text-align:left}
+  .roadmap .yr{font-variant:small-caps;font-weight:700;color:var(--ink-strong);letter-spacing:.03em}
+
+  /* ---------- colophon ---------- */
+  .colophon{margin-top:3.2em;padding-top:1em;border-top:1px solid var(--rule);
+    font-size:.85rem;font-style:italic;color:var(--soft);text-align:center}
+
+  /* ---------- print ---------- */
+  @media print{
+    :root{--paper:#fff;--paper-2:#faf7ec;--ink:#1a1a1a;--ink-strong:#000;--soft:#444;--rule:#999;--inline-bg:#eee}
+    body{font-size:11pt}.page{padding:0}
+    a{color:#000}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ===================== FRONT MATTER ===================== -->
+  <p class="overline">Technical build guide</p>
+  <h1 class="title">Building steam-mate</h1>
+  <p class="subtitle">A Tauri&nbsp;2 + Svelte desktop application for Steam account switching and Yu-Gi-Oh!&nbsp;Master&nbsp;Duel asset linking</p>
+  <p class="meta">Version 0.1 &nbsp;·&nbsp; Windows-first &nbsp;·&nbsp; target binary &lt; 6&nbsp;MB</p>
+  <hr class="toprule">
+
+  <div class="abstract">
+    <p><span class="run">Abstract.</span> steam-mate is a small cross-platform desktop app, built with Tauri&nbsp;2 and SvelteKit, that does two things: switch between remembered Steam accounts, and link Master Duel's per-account asset folders to one shared cache. This guide sets out the whole v0.1 build as twelve ordered steps, then reference material — the command surface, the common pitfalls, and the project's scope. The first release targets Windows; the design keeps the Steam feature cross-platform for later.</p>
+  </div>
+
+  <div class="overview">
+    <span class="run">The two features</span>
+    <dl>
+      <dt>Steam account switching <span class="muted">(cross-platform design)</span></dt>
+      <dd>Watt-Toolkit-style: close Steam, patch <code>loginusers.vdf</code> and Steam's internal "registry," then relaunch signed in as another account.</dd>
+      <dt>Master Duel asset linking <span class="muted">(Windows-only)</span></dt>
+      <dd>Replace each per-account <code>LocalData\&lt;id&gt;\0000\</code> with an NTFS junction to one shared <code>LocalData\DATA\0000\</code> — a ~13&nbsp;GB cache reused across every Konami account, rather than re-downloaded per account.</dd>
+    </dl>
+  </div>
+
+  <!-- ===================== CONTENTS ===================== -->
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><span class="n">1</span><a href="#s1">Scaffold the application and toolchain</a></li>
+      <li><span class="n">2</span><a href="#s2">Dependencies and the error model</a></li>
+      <li><span class="n">3</span><a href="#s3">Project module layout</a></li>
+      <li><span class="n">4</span><a href="#s4">Steam — discovery and account listing</a></li>
+      <li><span class="n">5</span><a href="#s5">Steam — the account-switch sequence</a></li>
+      <li><span class="n">6</span><a href="#s6">Steam — the account-switching page</a></li>
+      <li><span class="n">7</span><a href="#s7">Master Duel — discovery and account data</a></li>
+      <li><span class="n">8</span><a href="#s8">Master Duel — linking and unlinking</a></li>
+      <li><span class="n">9</span><a href="#s9">Master Duel — the asset-linking page</a></li>
+      <li><span class="n">10</span><a href="#s10">The command surface and types</a></li>
+      <li><span class="n">11</span><a href="#s11">Testing</a></li>
+      <li><span class="n">12</span><a href="#s12">Build and distribution</a></li>
+      <li><span class="n app">A</span><a href="#a1" class="app">Critical gotchas</a></li>
+      <li><span class="n app">B</span><a href="#a2" class="app">Scope and roadmap</a></li>
+    </ol>
+  </nav>
+
+  <!-- ===================== SECTION 1 ===================== -->
+  <section id="s1">
+    <h2 class="sec"><span class="n">1</span>Scaffold the application and toolchain</h2>
+    <p class="lead">Start from a clean Tauri 2 + Svelte + TypeScript scaffold managed by pnpm.</p>
+    <figure class="listing"><figcaption>Bootstrapping the project.</figcaption>
+<pre class="code"><code><span class="cm"># Prerequisites: Rust 1.80+, Node 20 LTS, pnpm</span>
+<span class="fn">cargo</span> install create-tauri-app --locked
+<span class="fn">cargo</span> install tauri-cli --version <span class="s">"^2.0"</span> --locked
+
+<span class="fn">cargo</span> create-tauri-app
+<span class="cm">#   name: steam-mate · id: com.&lt;handle&gt;.steammate</span>
+<span class="cm">#   frontend: TypeScript / Svelte · pkg mgr: pnpm</span>
+<span class="fn">cd</span> steam-mate
+<span class="fn">pnpm</span> install
+
+<span class="fn">pnpm</span> tauri dev      <span class="cm"># HMR + Rust rebuild on save</span>
+<span class="fn">pnpm</span> tauri build    <span class="cm"># release binary + .msi</span></code></pre></figure>
+    <p class="note tip"><span class="lbl">Note —</span> Commit <code>Cargo.lock</code>. steam-mate is a binary, not a library, so the lockfile is committed to pin exact dependency versions for reproducible builds.</p>
+  </section>
+
+  <!-- ===================== SECTION 2 ===================== -->
+  <section id="s2">
+    <h2 class="sec"><span class="n">2</span>Dependencies and the error model</h2>
+    <p class="lead">Pin the crate versions, then define one crate-wide error type that every command returns.</p>
+    <figure class="listing"><figcaption>Cargo dependencies and the release profile.</figcaption>
+<pre class="code"><code><span class="at">[dependencies]</span>
+serde = { version = <span class="s">"1"</span>, features = [<span class="s">"derive"</span>] }
+serde_json = <span class="s">"1"</span>
+thiserror = <span class="s">"1"</span>
+keyvalues-parser = <span class="s">"0.2"</span>   <span class="cm"># VDF parser; round-trips source</span>
+keyvalues-serde  = <span class="s">"0.2"</span>   <span class="cm"># typed deser on top</span>
+sysinfo = <span class="s">"0.32"</span>           <span class="cm"># cross-OS process listing</span>
+dirs = <span class="s">"5"</span>                 <span class="cm"># per-OS user dirs</span>
+csv = <span class="s">"1.3"</span>                <span class="cm"># CSV with CJK round-trip</span>
+walkdir = <span class="s">"2"</span>
+
+<span class="at">[target.'cfg(windows)'.dependencies]</span>
+winreg = <span class="s">"0.52"</span>            <span class="cm"># HKCU access; pure Rust</span>
+junction = <span class="s">"1.2"</span>           <span class="cm"># NTFS junctions, no admin</span>
+
+<span class="at">[profile.release]</span>
+opt-level = <span class="s">"z"</span>
+lto = <span class="num">true</span>
+codegen-units = <span class="num">1</span>
+panic = <span class="s">"abort"</span>
+strip = <span class="num">true</span></code></pre></figure>
+    <p class="note info"><span class="lbl">Why junctions —</span> <code>std::os::windows::fs::symlink_dir</code> requires administrator rights or Developer Mode; junctions do not. That settles the choice for a tool ordinary users run — needing admin rights would block many of them. The same-volume limit on junctions does not matter here, because Master Duel and its cache sit on the same drive.</p>
+    <h3 class="sub">A single error enum, tagged for the frontend</h3>
+    <figure class="listing"><figcaption>The crate-wide <code>AppError</code> (<code>src-tauri/src/error.rs</code>).</figcaption>
+<pre class="code"><code><span class="at">#[derive(thiserror::Error, Debug, serde::Serialize)]</span>
+<span class="at">#[serde(tag = "kind", content = "msg")]</span>
+<span class="k">pub</span> <span class="k">enum</span> <span class="t">AppError</span> {
+    <span class="at">#[error("steam not installed")]</span>        SteamNotInstalled,
+    <span class="at">#[error("vdf parse failed: {0}")]</span>      VdfParse(<span class="t">String</span>),
+    <span class="at">#[error("registry write failed: {0}")]</span> RegistryWrite(<span class="t">String</span>),
+    <span class="at">#[error("io error: {0}")]</span>              Io(<span class="t">String</span>),
+    <span class="at">#[error("game not installed: {0}")]</span>    GameNotInstalled(&amp;<span class="k">'static</span> <span class="t">str</span>),
+    <span class="at">#[error("game running: {0}")]</span>          GameRunning(&amp;<span class="k">'static</span> <span class="t">str</span>),
+    <span class="at">#[error("junction failed: {0}")]</span>       JunctionFailed(<span class="t">String</span>),
+    <span class="at">#[error("account not found: {0}")]</span>     AccountNotFound(<span class="t">String</span>),
+    <span class="at">#[error("process kill failed: {0}")]</span>   ProcessKillFailed(<span class="t">String</span>),
+}
+<span class="k">impl</span> <span class="t">From</span>&lt;<span class="t">std::io::Error</span>&gt; <span class="k">for</span> <span class="t">AppError</span> {
+    <span class="k">fn</span> <span class="fn">from</span>(e: <span class="t">std::io::Error</span>) -&gt; <span class="t">Self</span> { <span class="t">AppError</span>::<span class="fn">Io</span>(e.<span class="fn">to_string</span>()) }
+}
+<span class="k">pub</span> <span class="k">type</span> <span class="t">AppResult</span>&lt;<span class="t">T</span>&gt; = <span class="t">Result</span>&lt;<span class="t">T</span>, <span class="t">AppError</span>&gt;;</code></pre></figure>
+    <p>The <code>#[serde(tag="kind", content="msg")]</code> attribute serializes each variant to <code>{ "kind": "VdfParse", "msg": "…" }</code>, which the TypeScript side pattern-matches on <code>kind</code>. New variants are added per feature; per-module error enums are not introduced.</p>
+  </section>
+
+  <!-- ===================== SECTION 3 ===================== -->
+  <section id="s3">
+    <h2 class="sec"><span class="n">3</span>Project module layout</h2>
+    <p class="lead">A flat, mechanical layout: each feature owns its files, and each backend module owns its <code>commands.rs</code>.</p>
+    <figure class="listing"><figcaption>Backend and frontend source tree.</figcaption>
+<pre class="code"><code>src-tauri/src/
+├── main.rs            <span class="cm"># Tauri builder + invoke_handler</span>
+├── lib.rs             <span class="cm"># mod declarations</span>
+├── error.rs           <span class="cm"># AppError, AppResult</span>
+├── steam/             <span class="cm"># cross-platform</span>
+│   ├── mod.rs  commands.rs  account.rs  paths.rs
+│   ├── vdf.rs         <span class="cm"># loginusers.vdf parse / write</span>
+│   ├── registry.rs    <span class="cm"># Win HKCU OR registry.vdf</span>
+│   ├── process.rs     <span class="cm"># kill / start</span>
+│   └── switch.rs      <span class="cm"># orchestrator</span>
+└── games/
+    ├── mod.rs         <span class="cm"># supported-games registry</span>
+    └── master_duel/   <span class="cm"># #[cfg(windows)]</span>
+        └── mod.rs commands.rs paths.rs csv.rs link.rs account.rs
+
+src/
+├── lib/api/  steam.ts · types.ts · games/master-duel.ts
+├── routes/   +layout.svelte · steam/ · games/master-duel/
+└── app.html</code></pre></figure>
+    <h3 class="sub">Settled design decisions</h3>
+    <ul>
+      <li><b>Steam is top-level, not a "game."</b> It is the platform; account switching is a platform feature.</li>
+      <li><b>No shared trait across games.</b> A helper moves to a shared module only once two callers need the same thing — for example, a path-joining helper stays inside <code>steam/</code> until <code>master_duel</code> needs it too.</li>
+      <li><b>Each module owns its <code>commands.rs</code>.</b> Tauri registers commands statically in <code>main.rs</code>; per-module files keep that mechanical.</li>
+      <li><b>No <code>core/</code> until needed.</b> Premature shared modules end up coupled.</li>
+    </ul>
+    <h3 class="sub">Cross-platform configuration</h3>
+    <ul>
+      <li>Module level: <code>#[cfg(windows)] pub mod master_duel;</code> — non-Windows builds drop it entirely.</li>
+      <li>Function level: per-OS branches are split into sub-files (<code>registry/{windows,linux,macos}.rs</code>) re-exported from <code>mod.rs</code>.</li>
+    </ul>
+  </section>
+
+  <!-- ===================== SECTION 4 ===================== -->
+  <section id="s4">
+    <h2 class="sec"><span class="n">4</span>Steam — discovery and account listing</h2>
+    <p class="lead">Locate Steam, then parse <code>loginusers.vdf</code> into typed accounts.</p>
+    <figure class="table"><figcaption>Per-OS install and configuration locations.</figcaption>
+    <div class="tw"><table>
+      <thead><tr><th>OS</th><th>Steam install</th><th>loginusers.vdf</th><th>"Registry"</th></tr></thead>
+      <tbody>
+        <tr><td>Windows</td><td><code>HKCU\…\Valve\Steam\SteamPath</code> <span class="muted">(fallback <code>HKLM\…\WOW6432Node\…\InstallPath</code>)</span></td><td><code>&lt;install&gt;\config\loginusers.vdf</code></td><td>Win HKCU <code>Software\Valve\Steam</code></td></tr>
+        <tr><td>Linux</td><td><code>~/.steam/steam/</code></td><td><code>&lt;install&gt;/config/loginusers.vdf</code></td><td><code>~/.steam/registry.vdf</code></td></tr>
+        <tr><td>macOS</td><td><code>~/Library/Application Support/Steam/</code></td><td><code>&lt;install&gt;/config/loginusers.vdf</code></td><td><code>&lt;install&gt;/registry.vdf</code></td></tr>
+      </tbody>
+    </table></div></figure>
+    <p class="note warn"><span class="lbl">Caution —</span> <code>registry.vdf</code> is a Valve-format text file Steam uses on Linux and macOS as the cross-platform equivalent. It is <em>not</em> the Windows registry; those systems have no Windows registry to write to.</p>
+    <figure class="listing"><figcaption>The <code>loginusers.vdf</code> schema.</figcaption>
+<pre class="code"><code><span class="key">"users"</span>
+{
+    <span class="key">"76561198XXXXXXXXX"</span>          <span class="cm">// SteamID64 — block key</span>
+    {
+        <span class="key">"AccountName"</span>            <span class="s">"username"</span>
+        <span class="key">"PersonaName"</span>            <span class="s">"Displayed Name"</span>
+        <span class="key">"RememberPassword"</span>       <span class="s">"1"</span>
+        <span class="key">"WantsOfflineMode"</span>       <span class="s">"0"</span>
+        <span class="key">"SkipOfflineModeWarning"</span> <span class="s">"0"</span>
+        <span class="key">"AllowAutoLogin"</span>         <span class="s">"1"</span>
+        <span class="key">"MostRecent"</span>             <span class="s">"1"</span>     <span class="cm">// exactly one user</span>
+        <span class="key">"Timestamp"</span>              <span class="s">"1700000000"</span>
+    }
+}</code></pre></figure>
+    <p>Every value is a string even when it is really an integer or boolean, so each is parsed on its own. A <code>SteamAccount</code> is built per block and returned by <code>steam_list_accounts</code>; a missing file maps to <code>SteamNotInstalled</code> rather than a raw input/output (IO) error. If a malformed file holds a duplicate <code>AccountName</code>, the block with the highest <code>Timestamp</code> wins.</p>
+  </section>
+
+  <!-- ===================== SECTION 5 ===================== -->
+  <section id="s5">
+    <h2 class="sec"><span class="n">5</span>Steam — the account-switch sequence</h2>
+    <p class="lead">The core routine: <code>switch.rs</code> runs six steps, in order, across the vdf, registry, and process modules.</p>
+    <ol>
+      <li><b>Read</b> <code>loginusers.vdf</code>.</li>
+      <li><b>Locate</b> the target by <code>AccountName</code>, else return <code>AccountNotFound</code>. The rewritten text is built up front, so an unknown account fails <em>before</em> Steam is touched.</li>
+      <li><b>Close Steam</b> cleanly (on Windows, <code>Steam.exe -shutdown</code>), polling up to 3000&nbsp;ms and force-closing any process still alive. Running it again changes nothing — it is idempotent — so an already-closed Steam returns <code>Ok</code>.</li>
+      <li><b>Point auto-login</b> at the target (the three keys listed below).</li>
+      <li><b>Rewrite <code>loginusers.vdf</code></b>: the target receives <code>MostRecent=1</code> and <code>RememberPassword=1</code> (plus the offline flags when requested), and every other user receives <code>MostRecent=0</code>. The file is written atomically (temporary file, then rename).</li>
+      <li><b>Relaunch</b> Steam.</li>
+    </ol>
+    <figure class="table"><figcaption>The Steam-internal "registry" — three keys.</figcaption>
+    <div class="tw"><table>
+      <thead><tr><th>OS</th><th>How the three keys are written</th></tr></thead>
+      <tbody>
+        <tr><td>Windows</td><td><code>AutoLoginUser</code> &larr; account (REG_SZ); <code>AutoLoginUser_steamchina</code> &larr; account (REG_SZ); <code>RememberPassword</code> &larr; <code>1</code> (DWORD), all under <code>HKCU\Software\Valve\Steam</code>.</td></tr>
+        <tr><td>Linux / macOS</td><td>Open <code>registry.vdf</code>, walk down <code>Registry &gt; HKCU &gt; Software &gt; Valve &gt; Steam</code>, set the same three keys, and write atomically.</td></tr>
+      </tbody>
+    </table></div></figure>
+    <p class="note danger"><span class="lbl">Never touch —</span> the <code>ssfn*</code> files (<code>&lt;install&gt;\ssfn*</code>, or <code>~/.steam/ssfn*</code>) are the cached credentials; Steam manages them. If the target account has no <code>ssfn</code>, the switch correctly lands on the login screen with the username pre-filled. That is expected behavior, not an error.</p>
+    <p class="note warn"><span class="lbl">Caution —</span> corrupting <code>loginusers.vdf</code> loses the user's entire account list. Always write to a sibling temporary file and then <code>rename</code> over the target.</p>
+    <h3 class="sub">Offline mode and threading</h3>
+    <p>Passing <code>offlineMode: true</code> additionally sets <code>WantsOfflineMode=1</code> and <code>SkipOfflineModeWarning=1</code> on the target only; persona state is a v0.2 argument and is ignored. Commands are <code>async fn</code>, but the switch performs blocking IO and a roughly three-second kill-poll, so it runs under <code>spawn_blocking</code> to avoid stalling the runtime. There is no global state — every command re-reads the filesystem.</p>
+    <figure class="table"><figcaption>Edge cases the switch must handle.</figcaption>
+    <div class="tw"><table>
+      <thead><tr><th>Condition</th><th>Behavior</th></tr></thead>
+      <tbody>
+        <tr><td><code>loginusers.vdf</code> missing</td><td><code>SteamNotInstalled</code></td></tr>
+        <tr><td>Target not in file</td><td><code>AccountNotFound</code> — accounts are never added</td></tr>
+        <tr><td>Steam already closed</td><td>kill returns <code>Ok</code>, skips the wait</td></tr>
+        <tr><td>Alive after 3&nbsp;s</td><td>Force-kill</td></tr>
+        <tr><td>Steam Guard / two-factor prompt</td><td>Steam's own dialog appears; it is not intercepted</td></tr>
+        <tr><td>Already MostRecent</td><td>Rewrite regardless (idempotent)</td></tr>
+      </tbody>
+    </table></div></figure>
+  </section>
+
+  <!-- ===================== SECTION 6 ===================== -->
+  <section id="s6">
+    <h2 class="sec"><span class="n">6</span>Steam — the account-switching page</h2>
+    <p class="lead">The <code>/steam</code> route: a list of accounts that one clicks to switch.</p>
+    <ul>
+      <li>One row per account, showing avatar, <code>AccountName</code>, <code>PersonaName</code>, and an <i>active</i> indicator on the <code>MostRecent</code> account.</li>
+      <li>A <i>switch</i> control on each non-active row invokes <code>steam_switch_account</code>, with a toast reporting that Steam is restarting.</li>
+      <li>A toolbar offers <i>kill Steam</i>, <i>start Steam</i>, <i>clear auto-login</i>, and an <i>offline mode</i> checkbox that accompanies the next switch.</li>
+      <li>Rows with no cached session indicate that Steam will prompt for a password.</li>
+    </ul>
+    <p class="note info"><span class="lbl">Frontend rule —</span> components never call <code>invoke</code> directly; only the wrappers in <code>src/lib/api/*.ts</code> do.</p>
+  </section>
+
+  <!-- ===================== SECTION 7 ===================== -->
+  <section id="s7">
+    <h2 class="sec"><span class="n">7</span>Master Duel — discovery and account data</h2>
+    <p class="lead">Discover the game through Steam's library folders, then cross-reference its account folders with <code>accounts.csv</code>.</p>
+    <h3 class="sub">Install discovery</h3>
+    <ol>
+      <li>Read <code>&lt;steam&gt;\steamapps\libraryfolders.vdf</code> for all library locations.</li>
+      <li>For each, test for <code>&lt;library&gt;\steamapps\common\Yu-Gi-Oh!&nbsp;&nbsp;Master Duel\masterduel.exe</code>.</li>
+      <li>The first match wins; none gives <code>GameNotInstalled("master_duel")</code>.</li>
+    </ol>
+    <p class="note warn"><span class="lbl">Caution —</span> there are <b>two literal spaces</b> between <code>Yu-Gi-Oh!</code> and <code>Master</code>. Konami shipped it that way; the whitespace must not be normalized.</p>
+    <figure class="listing"><figcaption>The install folder layout.</figcaption>
+<pre class="code"><code>&lt;install&gt;\
+├── masterduel.exe
+├── LocalData\
+│   ├── DATA\0000\         <span class="cm">← shared cache (~13 GB, ~37k files)</span>
+│   │   ├── 00..ff\          <span class="cm">256 hex buckets (hash byte 0)</span>
+│   │   └── root\
+│   ├── 9b7470c4\0000\     <span class="cm">← per-account; replaced by a junction</span>
+│   └── 42a06a1e\0000\
+└── LocalSave\             <span class="cm">← save data — do not touch</span></code></pre></figure>
+    <p>Each per-account <code>0000\</code> is structurally identical to <code>DATA\0000\</code> — merely the 257 directories when empty. Master Duel neither detects nor cares about the junction.</p>
+    <figure class="listing"><figcaption>The <code>accounts.csv</code> schema.</figcaption>
+<pre class="code"><code><span class="key">folder_id,account_type,account_name</span>
+9b7470c4,main,キラーチューン
+42a06a1e,sub,閃刀姫
+5abe0b9,sub,HERO              <span class="cm"># leading 0 may strip — 7 OR 8 hex chars</span>
+ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</span></code></pre></figure>
+    <p><code>md_list_accounts</code> cross-references the <code>LocalData\</code> subdirectories (excluding <code>DATA</code>) with the CSV. Folders absent from the CSV return empty fields, and the interface prompts for a name. The <code>account_type</code> is <code>main</code>, <code>sub</code>, or empty; the interface may warn before linking a <code>main</code>.</p>
+  </section>
+
+  <!-- ===================== SECTION 8 ===================== -->
+  <section id="s8">
+    <h2 class="sec"><span class="n">8</span>Master Duel — linking and unlinking</h2>
+    <p class="lead">Point a per-account folder at the shared cache, or restore it, without ever deleting the cache.</p>
+    <figure class="listing"><figcaption><code>md_link_account(folder_id, force=false)</code>.</figcaption>
+<pre class="code"><code>1. install = <span class="fn">paths::find_install</span>()?
+2. shared  = install/<span class="s">"LocalData/DATA/0000"</span>
+   <span class="k">if</span> !shared.<span class="fn">exists</span>(): <span class="t">Err</span>(<span class="fn">GameNotInstalled</span>(<span class="s">"DATA missing"</span>))
+3. acct = install/<span class="s">"LocalData"</span>/folder_id/<span class="s">"0000"</span>
+   <span class="k">if</span> !acct.<span class="fn">parent</span>().<span class="fn">exists</span>(): <span class="t">Err</span>(<span class="fn">AccountNotFound</span>(folder_id))
+4. <span class="k">if</span> <span class="fn">junction::exists</span>(&amp;acct)? { <span class="k">return</span> <span class="t">Ok</span>(()) }       <span class="cm">// idempotent</span>
+5. <span class="k">if</span> acct.<span class="fn">exists</span>() {
+       <span class="k">if</span> <span class="fn">process::is_running</span>()?: <span class="t">Err</span>(<span class="fn">GameRunning</span>(<span class="s">"master_duel"</span>))
+       has_files = <span class="fn">walkdir</span>(&amp;acct).<span class="fn">any</span>(is_file)
+       <span class="k">if</span> has_files &amp;&amp; !force: <span class="t">Err</span>(<span class="fn">JunctionFailed</span>(<span class="s">"use force=true"</span>))
+       <span class="fn">fs::remove_dir_all</span>(&amp;acct)?
+   }
+6. <span class="fn">junction::create</span>(&amp;shared, &amp;acct)?                   <span class="cm">// acct → shared</span></code></pre></figure>
+    <figure class="listing"><figcaption><code>md_unlink_account(folder_id)</code>.</figcaption>
+<pre class="code"><code>1. acct = install/<span class="s">"LocalData"</span>/folder_id/<span class="s">"0000"</span>
+2. <span class="k">if</span> !<span class="fn">junction::exists</span>(&amp;acct)?: <span class="t">Err</span>(<span class="fn">JunctionFailed</span>(<span class="s">"not a junction"</span>))
+3. <span class="k">if</span> <span class="fn">process::is_running</span>()?: <span class="t">Err</span>(<span class="fn">GameRunning</span>(<span class="s">"master_duel"</span>))
+4. <span class="fn">fs::remove_dir</span>(&amp;acct)?          <span class="cm">// LINK ONLY — never the target</span>
+5. <span class="fn">fs::create_dir</span>(&amp;acct)?
+   <span class="k">for</span> i <span class="k">in</span> 0..=<span class="num">255u8</span>: <span class="fn">fs::create_dir</span>(acct/<span class="fn">format!</span>(<span class="s">"{:02x}"</span>, i))?
+   <span class="fn">fs::create_dir</span>(acct/<span class="s">"root"</span>)?</code></pre></figure>
+    <p class="note danger"><span class="lbl">Critical —</span> on unlink, use <code>remove_dir</code>, not <code>remove_dir_all</code>. The latter walks <em>through</em> the junction and deletes the target's contents — the shared <code>DATA\0000\</code> — destroying roughly 13&nbsp;GB.</p>
+    <p class="note danger"><span class="lbl">Critical —</span> <code>force=true</code> deletes a non-empty <code>0000\</code> before linking. It defaults to <code>false</code>, and the frontend must opt in explicitly, once per click.</p>
+    <p>Two helpers support the page: <code>md_is_linked(folder_id)</code> wraps <code>junction::exists</code>, returning <code>false</code> (not an error) for a missing path; and <code>md_is_running()</code> tests for <code>masterduel.exe</code> in the process list, matched case-insensitively.</p>
+    <p class="note danger"><span class="lbl">Never touch —</span> <code>LocalSave\</code> holds the player's save data.</p>
+  </section>
+
+  <!-- ===================== SECTION 9 ===================== -->
+  <section id="s9">
+    <h2 class="sec"><span class="n">9</span>Master Duel — the asset-linking page</h2>
+    <p class="lead">The <code>/games/master-duel</code> route: a per-account table of link toggles.</p>
+    <ul>
+      <li>One row per <code>LocalData\</code> folder: identifier, an editable name, a <code>main</code>/<code>sub</code> type selector, and a link toggle.</li>
+      <li>Inline name and type editing invoke <code>md_save_metadata</code>, which upserts <code>accounts.csv</code>.</li>
+      <li>Toggling a non-empty folder on prompts for the <code>force</code> confirmation before replacing it.</li>
+      <li>A shared-cache summary (path and size) and a legend for linked, normal, main, and sub states.</li>
+    </ul>
+    <p class="note warn"><span class="lbl">Running guard —</span> while <code>masterduel.exe</code> is running, every toggle is disabled and a banner is shown; any link or unlink attempt fails with <code>GameRunning</code>, surfaced as an error toast.</p>
+  </section>
+
+  <!-- ===================== SECTION 10 ===================== -->
+  <section id="s10">
+    <h2 class="sec"><span class="n">10</span>The command surface and types</h2>
+    <p class="lead">All commands are <code>async fn</code> returning <code>AppResult&lt;T&gt;</code>, registered in <code>main.rs</code>.</p>
+    <figure class="table"><figcaption>The complete Tauri command surface.</figcaption>
+    <div class="tw"><table>
+      <thead><tr><th>Command</th><th>Args</th><th>Returns</th><th>Behavior</th></tr></thead>
+      <tbody>
+        <tr><td><code>steam_list_accounts</code></td><td>—</td><td><code>SteamAccount[]</code></td><td>parse <code>loginusers.vdf</code></td></tr>
+        <tr><td><code>steam_switch_account</code></td><td><code>{ accountName, offlineMode? }</code></td><td><code>()</code></td><td>full switch sequence</td></tr>
+        <tr><td><code>steam_clear_login</code></td><td>—</td><td><code>()</code></td><td><code>AutoLoginUser = ""</code></td></tr>
+        <tr><td><code>steam_kill</code></td><td>—</td><td><code>()</code></td><td>graceful kill, poll 3 s, force; idempotent</td></tr>
+        <tr><td><code>steam_start</code></td><td>—</td><td><code>()</code></td><td>spawn Steam; does not wait</td></tr>
+        <tr><td><code>md_list_accounts</code></td><td>—</td><td><code>MdAccount[]</code></td><td>scan <code>LocalData\</code> against CSV</td></tr>
+        <tr><td><code>md_link_account</code></td><td><code>{ folderId, force? }</code></td><td><code>()</code></td><td>refuses non-empty <code>0000\</code> unless forced</td></tr>
+        <tr><td><code>md_unlink_account</code></td><td><code>{ folderId }</code></td><td><code>()</code></td><td>removes junction, rebuilds 257 dirs</td></tr>
+        <tr><td><code>md_is_linked</code></td><td><code>{ folderId }</code></td><td><code>bool</code></td><td>missing path gives <code>false</code></td></tr>
+        <tr><td><code>md_save_metadata</code></td><td><code>{ folderId, accountName, accountType }</code></td><td><code>()</code></td><td>upsert <code>accounts.csv</code></td></tr>
+        <tr><td><code>md_is_running</code></td><td>—</td><td><code>bool</code></td><td><code>masterduel.exe</code> present</td></tr>
+        <tr><td><code>list_supported_games</code></td><td>—</td><td><code>GameInfo[]</code></td><td><code>[]</code> on macOS/Linux for v0.1</td></tr>
+      </tbody>
+    </table></div></figure>
+    <p class="note warn"><span class="lbl">Caution —</span> <code>tauri::generate_handler!</code> does not accept <code>#[cfg]</code> per item. The Windows-only Master Duel commands are gated with two conditionally-compiled <code>Builder</code> branches (or a helper macro); confirm the current Tauri 2 best practice.</p>
+    <figure class="listing"><figcaption>Frontend types (<code>src/lib/api/types.ts</code>).</figcaption>
+<pre class="code"><code><span class="k">export</span> <span class="k">interface</span> <span class="t">SteamAccount</span> {
+  accountName: <span class="t">string</span>;
+  personaName: <span class="t">string</span>;
+  steamId64: <span class="t">string</span>;          <span class="cm">// STRING — JS can't hold 64-bit ints</span>
+  steamId32: <span class="t">number</span>;
+  rememberPassword: <span class="t">boolean</span>;
+  mostRecent: <span class="t">boolean</span>;
+  wantsOfflineMode: <span class="t">boolean</span>;
+  skipOfflineModeWarning: <span class="t">boolean</span>;
+  allowAutoLogin: <span class="t">boolean</span>;
+  timestamp: <span class="t">number</span>;
+  avatarUrl?: <span class="t">string</span>;         <span class="cm">// v0.2</span>
+}
+<span class="k">export</span> <span class="k">interface</span> <span class="t">MdAccount</span> {
+  folderId: <span class="t">string</span>;
+  accountName: <span class="t">string</span>;        <span class="cm">// empty if not in accounts.csv</span>
+  accountType: <span class="s">"main"</span> | <span class="s">"sub"</span> | <span class="s">""</span>;
+  isLinked: <span class="t">boolean</span>;
+}
+<span class="k">export</span> <span class="k">interface</span> <span class="t">GameInfo</span> { id: <span class="t">string</span>; displayName: <span class="t">string</span>; installed: <span class="t">boolean</span>; }</code></pre></figure>
+  </section>
+
+  <!-- ===================== SECTION 11 ===================== -->
+  <section id="s11">
+    <h2 class="sec"><span class="n">11</span>Testing</h2>
+    <p class="lead">Three layers: inline unit tests, tempdir integration tests, and a manual end-to-end pass.</p>
+    <figure class="listing"><figcaption>Test fixtures.</figcaption>
+<pre class="code"><code>src-tauri/tests/fixtures/
+├── steam/
+│   ├── loginusers.vdf        <span class="cm"># 3 accounts, one MostRecent=1</span>
+│   ├── registry.vdf          <span class="cm"># Linux/macOS sample</span>
+│   └── empty_loginusers.vdf  <span class="cm"># edge case</span>
+└── master_duel/
+    ├── accounts.csv          <span class="cm"># rows incl. CJK + special chars</span>
+    └── localdata_layout/     <span class="cm"># synthesized 0000 dir</span></code></pre></figure>
+    <ul>
+      <li><b>Unit.</b> <code>#[cfg(test)] mod tests</code> inline per module, loading the fixtures above.</li>
+      <li><b>Integration.</b> <code>integration_steam_switch.rs</code> and <code>integration_md_link.rs</code> against <code>tempfile::tempdir()</code>.</li>
+      <li><b>Manual end-to-end.</b> The checklist below, on a real Windows&nbsp;11 install.</li>
+    </ul>
+    <p class="note danger"><span class="lbl">Never —</span> run tests against the real Steam or Master Duel install. Test state is always built fresh in a <code>tempfile::tempdir()</code>.</p>
+    <h3 class="sub">Manual end-to-end checklist</h3>
+    <ol>
+      <li>Open steam-mate; <code>/steam</code> shows the real accounts.</li>
+      <li>Click an account; Steam closes, then relaunches signed in to it.</li>
+      <li>Clear auto-login and switch again; Steam relaunches at the login screen with the username pre-filled.</li>
+      <li>Open <code>/games/master-duel</code>; all Konami folders and CSV content appear.</li>
+      <li>Toggle the link on a non-main account; Explorer shows <code>0000</code> as a junction to <code>DATA</code>.</li>
+      <li>Toggle while Master Duel runs; an error toast reports the game is running. Close it; the toggle works.</li>
+      <li>Untoggle; the folder is a normal directory again, with 256 buckets and <code>root</code>.</li>
+    </ol>
+  </section>
+
+  <!-- ===================== SECTION 12 ===================== -->
+  <section id="s12">
+    <h2 class="sec"><span class="n">12</span>Build and distribution</h2>
+    <p class="lead">Produce the release artifact and confirm the size budget.</p>
+    <figure class="listing"><figcaption>Producing the release build.</figcaption>
+<pre class="code"><code><span class="fn">pnpm</span> tauri build        <span class="cm"># → stripped .exe + .msi installer</span></code></pre></figure>
+    <p>With the release-profile settings shown earlier (<code>opt-level="z"</code>, link-time optimization, <code>panic="abort"</code>, and <code>strip</code>), the stripped Windows binary should come in under 6&nbsp;MB. Going over that budget counts as a regression to investigate.</p>
+  </section>
+
+  <!-- ===================== APPENDIX A ===================== -->
+  <section id="a1">
+    <h2 class="sec appendix"><span class="n">A</span>Critical gotchas</h2>
+    <p class="lead">The combined "do not forget" list.</p>
+    <ol class="gotchas">
+      <li><code>generate_handler!</code> cannot take <code>#[cfg]</code> per item — use conditional <code>Builder</code> branches.</li>
+      <li>Write <code>loginusers.vdf</code> and <code>registry.vdf</code> atomically — temporary file, then rename.</li>
+      <li><code>steamId64</code> is a string in TypeScript, never a number.</li>
+      <li><code>force=true</code> on link silently destroys 13&nbsp;GB if misused — default it <code>false</code>.</li>
+      <li><code>remove_dir</code> versus <code>remove_dir_all</code> on unlink — the wrong one erases the shared cache.</li>
+      <li>There are two spaces in <code>Yu-Gi-Oh!  Master Duel</code> — do not normalize them.</li>
+      <li>Never touch <code>ssfn*</code> — those are the credentials.</li>
+      <li>Never touch <code>LocalSave\</code> — that is save data.</li>
+      <li><code>registry.vdf</code> is not the Windows registry, despite the name.</li>
+      <li>Never test against the real install — always use <code>tempdir()</code>.</li>
+      <li><code>md_is_linked</code> on a missing path returns <code>false</code>, not an error.</li>
+      <li>VDF values are strings even when semantically int/bool — parse explicitly.</li>
+      <li>A duplicate <code>AccountName</code> in the VDF resolves to the highest <code>Timestamp</code>.</li>
+    </ol>
+  </section>
+
+  <!-- ===================== APPENDIX B ===================== -->
+  <section id="a2">
+    <h2 class="sec appendix"><span class="n">B</span>Scope and roadmap</h2>
+    <h3 class="sub">Out of scope — permanently</h3>
+    <p>The following overlap with Watt Toolkit but are left out on purpose, so the app keeps to two features done in full instead of twenty partial ones:</p>
+    <ul>
+      <li>A time-based one-time-password (TOTP) authenticator (Steam Guard)</li>
+      <li>Network accelerator or proxy</li>
+      <li>Game store or library browsing</li>
+      <li>Trade and market features</li>
+      <li>Inventory and screenshot management</li>
+    </ul>
+    <h3 class="sub">Roadmap — beyond v0.1</h3>
+    <div class="roadmap">
+      <p><span class="yr">v0.2.</span> Linux and macOS Steam support, <code>registry.vdf</code> patching, persona state, avatar fetching, a "currently signed in as" indicator, a tray quick-switch, a Master Duel filesystem watcher, disk-space estimates, bulk link and unlink, a settings page, and a continuous-integration (CI) build matrix.</p>
+      <p><span class="yr">v0.3.</span> A Family Share manager, avatar-<code>.ico</code> shortcuts, support for platforms beyond Steam, account import and export, and direct <code>loginusers.vdf</code> management.</p>
+      <p><span class="yr">Stretch.</span> A command-line mode, a headless tray daemon, an auto-updater, and further game modules.</p>
+      <p><span class="yr">Localization.</span> A future, not-yet-scheduled feature: a localized interface in English, 日本語, and 简体中文 — Master Duel's player base skews Japanese and Chinese, so it would widen reach.</p>
+    </div>
+  </section>
+
+  <p class="colophon">steam-mate — two features, in full. This guide is one self-contained file and needs no network.</p>
+
+</div>
+</body>
+</html>
