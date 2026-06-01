@@ -6,22 +6,24 @@
 <title>Building steam-mate — a technical build guide</title>
 <style>
   /* ============================================================
-     steam-mate — build guide, typeset as a technical report.
-     Readable serif body (Georgia), ink on warm paper, numbered
-     sections, booktabs tables, and a restrained Solarized syntax
-     theme. Self-contained; opens offline; no scripts.
+     steam-mate — build guide, set as a fine technical monograph.
+     Warm ivory paper; Palatino/Iowan body with true oldstyle
+     figures; section numerals hung in the margin; hairline + double
+     rules; quiet inset listings; booktabs tables. Self-contained,
+     offline, no scripts, prints clean.
      ============================================================ */
   :root{
-    --paper:#fdf6e3; --paper-2:#f6efd6; --inline-bg:rgba(101,123,131,.10);
+    --paper:#fdf6e3; --paper-2:#f4ecd6; --inline-bg:rgba(101,123,131,.10);
     --rule:#cabf99; --rule-soft:#ddd5b8;
-    --ink:#2a2722; --ink-strong:#171510; --soft:#6d695c;
+    --ink:#2a2620; --ink-strong:#15110b; --soft:#6d695c;
     --link:#1d6fa8; --amber:#946b00; --red:#b62a22; --green:#5d6c00; --violet:#5b5fae;
+    --numeral:#bd9f57;            /* the large marginal section figures — antique gold */
 
     /* syntax theme (muted on cream) */
     --c-key:#6f7d00; --c-type:#9a6f0d; --c-fn:#1d6fa8; --c-str:#1f7a72;
     --c-num:#b02d72; --c-attr:#b1561a; --c-prop:#46708d; --c-inline:#356b64;
 
-    --serif:Georgia,"Iowan Old Style","Palatino Linotype",Palatino,Cambria,"Times New Roman",serif;
+    --serif:Georgia,Cambria,"Palatino Linotype","Times New Roman",serif;
     --mono:"Cascadia Mono",Consolas,"Fira Code","Liberation Mono",Menlo,monospace;
   }
   @media (prefers-color-scheme:dark){
@@ -30,6 +32,7 @@
       --rule:#1b4a55; --rule-soft:#0e3b46;
       --ink:#b1bab2; --ink-strong:#eee8d5; --soft:#8a958c;
       --link:#4ea6dd; --amber:#c79a2e; --red:#e0635c; --green:#9aab3a; --violet:#9a9ed6;
+      --numeral:#9c8a52;
       --c-key:#859900; --c-type:#b58900; --c-fn:#4ea6dd; --c-str:#2aa198;
       --c-num:#d33682; --c-attr:#cb4b16; --c-prop:#6c9bd1; --c-inline:#2aa198;
     }
@@ -43,69 +46,78 @@
     counter-reset:listing table;
     -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
   }
-  .page{max-width:744px;margin:0 auto;padding:60px 28px 88px}
+  ::selection{background:rgba(189,159,87,.22)}
+  .page{max-width:720px;margin:0 auto;padding:64px 28px 96px}
 
   p{margin:0 0 1em;text-align:justify;hyphens:auto}
-  a{color:var(--link);text-decoration:none}
-  a:hover{text-decoration:underline;text-underline-offset:2px}
+  a{color:var(--link);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .15s}
+  a:hover{border-bottom-color:currentColor}
   b,strong{color:var(--ink-strong);font-weight:700}
+  em{color:inherit}
 
-  code{font-family:var(--mono);font-size:.82em;background:var(--inline-bg);
-    padding:.07em .36em;border-radius:3px;color:var(--c-inline);word-break:break-word}
+  code{font-family:var(--mono);font-size:.8em;background:var(--inline-bg);
+    padding:.07em .36em;border-radius:3px;color:var(--c-inline);word-break:break-word;
+    font-variant-numeric:lining-nums tabular-nums}
 
   /* ---------- front matter ---------- */
-  .overline{font-variant:small-caps;letter-spacing:.14em;font-size:.86rem;font-weight:700;
-    color:var(--violet);margin:0 0 .5em;text-align:center}
+  .overline{font-variant:small-caps;letter-spacing:.22em;font-size:.82rem;font-weight:700;
+    color:var(--violet);margin:0 0 .7em;text-align:center}
   h1.title{font-size:2.55rem;line-height:1.1;font-weight:700;color:var(--ink-strong);
     text-align:center;margin:0 0 .3em;letter-spacing:-.005em}
-  .subtitle{font-style:italic;font-size:1.2rem;color:var(--ink);text-align:center;
-    max-width:32ch;margin:0 auto .9em;line-height:1.4}
-  .meta{font-variant:small-caps;letter-spacing:.05em;font-size:.9rem;color:var(--soft);text-align:center;margin:0}
-  .toprule{border:none;border-top:3px double var(--ink-strong);margin:1.6em 0 0;opacity:.8}
+  .subtitle{font-style:italic;font-size:1.22rem;color:var(--ink);text-align:center;
+    max-width:34ch;margin:0 auto 1em;line-height:1.42}
+  .meta{font-variant:small-caps;letter-spacing:.08em;font-size:.9rem;color:var(--soft);text-align:center;margin:0}
+  .toprule{border:none;border-top:3px double var(--ink-strong);margin:1.7em 0 0;opacity:.85}
 
-  .abstract{margin:1.9em 2.2em;font-size:1rem;color:var(--ink)}
-  @media(max-width:620px){.abstract{margin:1.7em .2em}}
-  .abstract .run{font-variant:small-caps;letter-spacing:.05em;font-weight:700;color:var(--ink-strong)}
-  .overview{margin:1.7em 2.2em}
-  @media(max-width:620px){.overview{margin:1.7em .2em}}
-  .overview .run{font-variant:small-caps;letter-spacing:.05em;font-weight:700;color:var(--ink-strong);
-    font-size:.92rem;display:block;margin-bottom:.45em}
+  .abstract{margin:2em 2.4em;font-size:1.02rem;color:var(--ink)}
+  @media(max-width:620px){.abstract{margin:1.7em 0}}
+  .abstract .run{font-variant:small-caps;letter-spacing:.06em;font-weight:700;color:var(--ink-strong)}
+  .overview{margin:1.8em 2.4em}
+  @media(max-width:620px){.overview{margin:1.8em 0}}
+  .overview .run{font-variant:small-caps;letter-spacing:.1em;font-weight:700;color:var(--ink-strong);
+    font-size:.86rem;display:block;margin-bottom:.5em;text-align:center}
   .overview dl{margin:0}
-  .overview dt{font-weight:700;color:var(--ink-strong)}
-  .overview dd{margin:.12em 0 .85em;text-align:justify;hyphens:auto}
+  .overview dt{font-weight:700;color:var(--ink-strong);font-style:italic}
+  .overview dd{margin:.12em 0 .9em;text-align:justify;hyphens:auto}
 
   /* ---------- contents ---------- */
-  .toc{margin:2.4em 0;padding:1.15em 1.4em;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
-  .toc h2{font-variant:small-caps;letter-spacing:.08em;font-size:1.05rem;font-weight:700;color:var(--ink-strong);
-    margin:0 0 .6em;text-align:center}
-  .toc ol{list-style:none;margin:0;padding:0;columns:2;column-gap:2.4em}
+  .toc{margin:2.6em 0;padding:1.3em 1.5em;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+  .toc h2{font-variant:small-caps;letter-spacing:.12em;font-size:1rem;font-weight:700;color:var(--ink-strong);
+    margin:0 0 .7em;text-align:center}
+  .toc ol{list-style:none;margin:0;padding:0;columns:2;column-gap:2.6em}
   @media(max-width:620px){.toc ol{columns:1}}
-  .toc li{display:flex;gap:.7em;padding:.2em 0;break-inside:avoid;font-size:.98rem}
-  .toc .n{flex:none;width:1.7em;text-align:right;color:var(--soft);font-variant-numeric:lining-nums}
-  .toc a{color:var(--ink)} .toc a:hover{color:var(--link)}
-  .toc .app{color:var(--soft);font-variant:small-caps;letter-spacing:.03em}
+  .toc li{display:flex;gap:.8em;padding:.22em 0;break-inside:avoid;font-size:.98rem}
+  .toc .n{flex:none;width:1.7em;text-align:right;color:var(--soft);font-weight:700;
+    font-variant-numeric:lining-nums tabular-nums}
+  .toc a{color:var(--ink);border:none} .toc a:hover{color:var(--link)}
+  .toc .app{color:var(--soft);font-variant:small-caps;letter-spacing:.04em}
 
   /* ---------- sections ---------- */
-  h2.sec{font-size:1.5rem;font-weight:700;color:var(--ink-strong);line-height:1.22;
-    margin:2.6em 0 .7em;padding-bottom:.22em;border-bottom:1px solid var(--rule)}
+  h2.sec{position:relative;font-size:1.55rem;font-weight:700;color:var(--ink-strong);line-height:1.2;
+    margin:2.8em 0 .7em;padding-bottom:.24em;border-bottom:1px solid var(--rule)}
   h2.sec .n{color:var(--soft);font-variant-numeric:lining-nums;margin-right:.55em;font-weight:700}
   h2.sec.appendix{border-bottom-style:double;border-bottom-width:2px}
-  h3.sub{font-size:1.1rem;font-weight:700;color:var(--ink-strong);margin:1.55em 0 .25em;font-style:italic}
-  .lead{color:var(--soft);font-style:italic;margin:.1em 0 1em;text-align:left}
+  /* hang the section numeral out in the left margin when the page has room */
+  @media(min-width:1040px){
+    h2.sec .n{position:absolute;right:100%;top:-.06em;margin:0;padding-right:.95rem;
+      font-size:2.5rem;font-weight:400;line-height:1;color:var(--numeral);opacity:.92}
+  }
+  h3.sub{font-size:1.12rem;font-weight:700;color:var(--ink-strong);margin:1.6em 0 .25em;font-style:italic}
+  .lead{color:var(--soft);font-style:italic;font-size:1.02rem;margin:.1em 0 1em;text-align:left}
 
-  ul,ol{margin:.65em 0 1em;padding-left:1.5em}
-  li{margin:.32em 0}
+  ul,ol{margin:.7em 0 1em;padding-left:1.5em}
+  li{margin:.34em 0}
   li::marker{color:var(--soft)}
 
   /* ---------- listings (code) ---------- */
-  figure{margin:1.35em 0}
-  figure.listing figcaption{font-style:italic;color:var(--soft);font-size:.88rem;margin-bottom:.42em}
+  figure{margin:1.45em 0}
+  figure.listing figcaption{font-style:italic;color:var(--soft);font-size:.88rem;margin-bottom:.45em}
   figure.listing figcaption::before{counter-increment:listing;content:"Listing " counter(listing) ". ";
-    font-style:normal;font-variant:small-caps;letter-spacing:.04em;color:var(--ink-strong);font-weight:700}
-  pre.code{margin:0;background:var(--paper-2);border:1px solid var(--rule);border-radius:5px;
-    padding:.9em 1.1em;overflow-x:auto;white-space:pre;
-    font-family:var(--mono);font-size:.82rem;line-height:1.62;color:var(--ink);text-align:left;hyphens:none;
-    -webkit-font-smoothing:auto}
+    font-style:normal;font-variant:small-caps;letter-spacing:.05em;color:var(--ink-strong);font-weight:700}
+  pre.code{margin:0;background:var(--paper-2);border:1px solid var(--rule);border-left:3px solid var(--c-str);
+    border-radius:4px;padding:.95em 1.15em;overflow-x:auto;white-space:pre;
+    font-family:var(--mono);font-size:.82rem;line-height:1.65;color:var(--ink);text-align:left;hyphens:none;
+    font-variant-numeric:lining-nums tabular-nums;-webkit-font-smoothing:auto}
   pre.code code{background:none;padding:0;font-size:1em;color:inherit;border-radius:0}
 
   /* syntax tokens */
@@ -119,42 +131,49 @@
   .key{color:var(--c-prop)}
 
   /* ---------- notes ---------- */
-  .note{margin:1.25em 0;padding:.2em 0 .2em 1.1em;border-left:3px solid var(--rule);
-    font-size:.98rem;line-height:1.6}
-  .note .lbl{font-variant:small-caps;font-weight:700;letter-spacing:.04em;margin-right:.15em}
+  .note{margin:1.3em 0;padding:.25em 0 .25em 1.15em;border-left:3px solid var(--rule);
+    font-size:.98rem;line-height:1.62}
+  .note .lbl{font-variant:small-caps;font-weight:700;letter-spacing:.05em;margin-right:.15em}
   .note.warn{border-left-color:var(--amber)} .note.warn .lbl{color:var(--amber)}
   .note.danger{border-left-color:var(--red)} .note.danger .lbl{color:var(--red)}
   .note.info{border-left-color:var(--link)} .note.info .lbl{color:var(--link)}
   .note.tip{border-left-color:var(--green)} .note.tip .lbl{color:var(--green)}
 
+  /* ---------- done-when (completion bar closing each step) ---------- */
+  .done{margin:1.3em 0 0;padding-top:.6em;border-top:1px dotted var(--rule);font-size:.92rem;color:var(--soft)}
+  .done .lbl{font-variant:small-caps;font-weight:700;letter-spacing:.05em;color:var(--green);margin-right:.3em}
+
   /* ---------- tables (booktabs) ---------- */
-  figure.table figcaption{font-style:italic;color:var(--soft);font-size:.88rem;margin-bottom:.45em}
+  figure.table figcaption{font-style:italic;color:var(--soft);font-size:.88rem;margin-bottom:.5em}
   figure.table figcaption::before{counter-increment:table;content:"Table " counter(table) ". ";
-    font-style:normal;font-variant:small-caps;letter-spacing:.04em;color:var(--ink-strong);font-weight:700}
+    font-style:normal;font-variant:small-caps;letter-spacing:.05em;color:var(--ink-strong);font-weight:700}
   .tw{overflow-x:auto}
-  table{width:100%;border-collapse:collapse;font-size:.9rem;
+  table{width:100%;border-collapse:collapse;font-size:.9rem;font-variant-numeric:lining-nums tabular-nums;
     border-top:2px solid var(--ink-strong);border-bottom:2px solid var(--ink-strong)}
-  th,td{text-align:left;vertical-align:top;padding:.48em .7em}
+  th,td{text-align:left;vertical-align:top;padding:.5em .75em}
   th{color:var(--ink-strong);font-weight:700;border-bottom:1px solid var(--ink-strong);
-    font-variant:small-caps;letter-spacing:.03em}
+    font-variant:small-caps;letter-spacing:.04em}
+  tbody tr:hover{background:rgba(101,123,131,.06)}
   td:first-child{color:var(--ink-strong)}
   td code{font-size:.85em}
   .muted{color:var(--soft)}
 
   /* ---------- appendix lists ---------- */
-  ol.gotchas li{margin:.5em 0}
-  .roadmap p{margin:.55em 0;text-align:left}
-  .roadmap .yr{font-variant:small-caps;font-weight:700;color:var(--ink-strong);letter-spacing:.03em}
+  ol.gotchas li{margin:.55em 0}
+  .roadmap p{margin:.6em 0;text-align:left}
+  .roadmap .yr{font-variant:small-caps;font-weight:700;color:var(--ink-strong);letter-spacing:.04em}
 
   /* ---------- colophon ---------- */
-  .colophon{margin-top:3.2em;padding-top:1em;border-top:1px solid var(--rule);
+  .colophon{margin-top:3.4em;padding-top:1.1em;border-top:1px solid var(--rule);
     font-size:.85rem;font-style:italic;color:var(--soft);text-align:center}
 
   /* ---------- print ---------- */
   @media print{
-    :root{--paper:#fff;--paper-2:#faf7ec;--ink:#1a1a1a;--ink-strong:#000;--soft:#444;--rule:#999;--inline-bg:#eee}
-    body{font-size:11pt}.page{padding:0}
-    a{color:#000}
+    :root{--paper:#fff;--paper-2:#faf7ec;--ink:#1a1a1a;--ink-strong:#000;--soft:#444;--rule:#999;--inline-bg:#eee;--numeral:#555}
+    body{font-size:11pt}.page{padding:0;max-width:none}
+    h2.sec .n{position:static;font-size:inherit;font-weight:700;color:var(--soft)}
+    a{color:#000;border:none}
+    pre.code{border-left-color:#999}
   }
 </style>
 </head>
@@ -193,7 +212,7 @@
       <li><span class="n">5</span><a href="#s5">Steam — the account-switch sequence</a></li>
       <li><span class="n">6</span><a href="#s6">Steam — the account-switching page</a></li>
       <li><span class="n">7</span><a href="#s7">Master Duel — discovery and account data</a></li>
-      <li><span class="n">8</span><a href="#s8">Master Duel — linking and unlinking</a></li>
+      <li><span class="n">8</span><a href="#s8">Master Duel — link, unlink, delete, export</a></li>
       <li><span class="n">9</span><a href="#s9">Master Duel — the asset-linking page</a></li>
       <li><span class="n">10</span><a href="#s10">The command surface and types</a></li>
       <li><span class="n">11</span><a href="#s11">Testing</a></li>
@@ -221,6 +240,7 @@
 <span class="fn">pnpm</span> tauri dev      <span class="cm"># HMR + Rust rebuild on save</span>
 <span class="fn">pnpm</span> tauri build    <span class="cm"># release binary + .msi</span></code></pre></figure>
     <p class="note tip"><span class="lbl">Note —</span> Commit <code>Cargo.lock</code>. steam-mate is a binary, not a library, so the lockfile is committed to pin exact dependency versions for reproducible builds.</p>
+    <p class="done"><span class="lbl">Done when —</span> the scaffold runs: <code>pnpm tauri dev</code> opens the window and <code>cargo check</code> is clean.</p>
   </section>
 
   <!-- ===================== SECTION 2 ===================== -->
@@ -270,6 +290,7 @@ strip = <span class="num">true</span></code></pre></figure>
 }
 <span class="k">pub</span> <span class="k">type</span> <span class="t">AppResult</span>&lt;<span class="t">T</span>&gt; = <span class="t">Result</span>&lt;<span class="t">T</span>, <span class="t">AppError</span>&gt;;</code></pre></figure>
     <p>The <code>#[serde(tag="kind", content="msg")]</code> attribute serializes each variant to <code>{ "kind": "VdfParse", "msg": "…" }</code>, which the TypeScript side pattern-matches on <code>kind</code>. New variants are added per feature; per-module error enums are not introduced.</p>
+    <p class="done"><span class="lbl">Done when —</span> <code>AppError</code> and <code>AppResult</code> compile and the dependencies resolve (<code>cargo check</code>).</p>
   </section>
 
   <!-- ===================== SECTION 3 ===================== -->
@@ -308,6 +329,29 @@ src/
       <li>Module level: <code>#[cfg(windows)] pub mod master_duel;</code> — non-Windows builds drop it entirely.</li>
       <li>Function level: per-OS branches are split into sub-files (<code>registry/{windows,linux,macos}.rs</code>) re-exported from <code>mod.rs</code>.</li>
     </ul>
+    <h3 class="sub">Project constants</h3>
+    <p>The fixed values referenced throughout — one authoritative place for the literal paths, keys, and magic numbers.</p>
+    <figure class="listing"><figcaption>Paths, registry keys, and magic values.</figcaption>
+<pre class="code"><code><span class="cm"># Paths &amp; names — Windows</span>
+Steam install   HKCU\Software\Valve\Steam\SteamPath   <span class="cm"># fallback: HKLM\…\WOW6432Node\…\InstallPath</span>
+loginusers.vdf  &lt;steam&gt;\config\loginusers.vdf
+MD install      &lt;library&gt;\steamapps\common\Yu-Gi-Oh!  Master Duel\   <span class="cm"># TWO spaces</span>
+shared cache    &lt;md&gt;\LocalData\DATA\0000\
+per-account     &lt;md&gt;\LocalData\&lt;id&gt;\0000\
+saves           &lt;md&gt;\LocalSave\&lt;id&gt;\   <span class="cm"># never touched except an explicit delete</span>
+metadata        &lt;md&gt;\accounts.csv
+
+<span class="cm"># Registry keys set on switch — HKCU\Software\Valve\Steam</span>
+AutoLoginUser            = &lt;accountName&gt;   <span class="cm"># REG_SZ</span>
+AutoLoginUser_steamchina = &lt;accountName&gt;   <span class="cm"># REG_SZ</span>
+RememberPassword         = 1               <span class="cm"># DWORD</span>
+
+<span class="cm"># Magic values</span>
+0000 scaffold      256 hex dirs (00..ff) + "root"  = 257 entries
+kill-poll timeout  3000 ms
+size budget        &lt; 6 MB stripped (release)
+process names      Steam.exe / steam ,  masterduel.exe</code></pre></figure>
+    <p class="done"><span class="lbl">Done when —</span> every file in the tree exists (stubs are fine) and <code>cargo check</code> passes.</p>
   </section>
 
   <!-- ===================== SECTION 4 ===================== -->
@@ -340,6 +384,7 @@ src/
     }
 }</code></pre></figure>
     <p>Every value is a string even when it is really an integer or boolean, so each is parsed on its own. A <code>SteamAccount</code> is built per block and returned by <code>steam_list_accounts</code>; a missing file maps to <code>SteamNotInstalled</code> rather than a raw input/output (IO) error. If a malformed file holds a duplicate <code>AccountName</code>, the block with the highest <code>Timestamp</code> wins.</p>
+    <p class="done"><span class="lbl">Done when —</span> <code>steam_list_accounts</code> returns the real accounts from <code>loginusers.vdf</code>, and a missing file gives <code>SteamNotInstalled</code>.</p>
   </section>
 
   <!-- ===================== SECTION 5 ===================== -->
@@ -378,6 +423,7 @@ src/
         <tr><td>Already MostRecent</td><td>Rewrite regardless (idempotent)</td></tr>
       </tbody>
     </table></div></figure>
+    <p class="done"><span class="lbl">Done when —</span> a fixture round-trips — target <code>MostRecent=1</code> / <code>RememberPassword=1</code>, others <code>0</code>, written atomically — <code>cargo test steam::vdf</code> is green, and on a real machine the switch closes Steam and relaunches it signed into the target.</p>
   </section>
 
   <!-- ===================== SECTION 6 ===================== -->
@@ -391,6 +437,7 @@ src/
       <li>Rows with no cached session indicate that Steam will prompt for a password.</li>
     </ul>
     <p class="note info"><span class="lbl">Frontend rule —</span> components never call <code>invoke</code> directly; only the wrappers in <code>src/lib/api/*.ts</code> do.</p>
+    <p class="done"><span class="lbl">Done when —</span> <code>/steam</code> lists the accounts with the active indicator, and clicking a non-active row switches via <code>steam_switch_account</code>.</p>
   </section>
 
   <!-- ===================== SECTION 7 ===================== -->
@@ -422,12 +469,13 @@ src/
 5abe0b9,sub,HERO              <span class="cm"># leading 0 may strip — 7 OR 8 hex chars</span>
 ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</span></code></pre></figure>
     <p><code>md_list_accounts</code> cross-references the <code>LocalData\</code> subdirectories (excluding <code>DATA</code>) with the CSV. Folders absent from the CSV return empty fields, and the interface prompts for a name. The <code>account_type</code> is <code>main</code>, <code>sub</code>, or empty; the interface may warn before linking a <code>main</code>.</p>
+    <p class="done"><span class="lbl">Done when —</span> <code>md_list_accounts</code> returns every <code>LocalData\</code> folder except <code>DATA</code>, cross-referenced with <code>accounts.csv</code>.</p>
   </section>
 
   <!-- ===================== SECTION 8 ===================== -->
   <section id="s8">
-    <h2 class="sec"><span class="n">8</span>Master Duel — linking and unlinking</h2>
-    <p class="lead">Point a per-account folder at the shared cache, or restore it, without ever deleting the cache.</p>
+    <h2 class="sec"><span class="n">8</span>Master Duel — link, unlink, delete, export</h2>
+    <p class="lead">Point a per-account folder at the shared cache or restore it; remove an account outright; and export the account list to keep or re-import.</p>
     <figure class="listing"><figcaption><code>md_link_account(folder_id, force=false)</code>.</figcaption>
 <pre class="code"><code>1. install = <span class="fn">paths::find_install</span>()?
 2. shared  = install/<span class="s">"LocalData/DATA/0000"</span>
@@ -453,7 +501,36 @@ ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</sp
     <p class="note danger"><span class="lbl">Critical —</span> on unlink, use <code>remove_dir</code>, not <code>remove_dir_all</code>. The latter walks <em>through</em> the junction and deletes the target's contents — the shared <code>DATA\0000\</code> — destroying roughly 13&nbsp;GB.</p>
     <p class="note danger"><span class="lbl">Critical —</span> <code>force=true</code> deletes a non-empty <code>0000\</code> before linking. It defaults to <code>false</code>, and the frontend must opt in explicitly, once per click.</p>
     <p>Two helpers support the page: <code>md_is_linked(folder_id)</code> wraps <code>junction::exists</code>, returning <code>false</code> (not an error) for a missing path; and <code>md_is_running()</code> tests for <code>masterduel.exe</code> in the process list, matched case-insensitively.</p>
-    <p class="note danger"><span class="lbl">Never touch —</span> <code>LocalSave\</code> holds the player's save data.</p>
+    <p class="note danger"><span class="lbl">Never touch —</span> <code>LocalSave\</code> holds the player's save data; <em>linking and unlinking never go near it</em>. The lone exception is an explicit account delete with <code>deleteSaves=true</code> (below).</p>
+
+    <h3 class="sub">Deleting an account</h3>
+    <p>Deletion removes a per-account folder outright — and, on explicit opt-in, that account's saves and its row in <code>accounts.csv</code>. The hazard is the <code>0000</code> junction: the per-account folder may still hold a link into the shared cache, so the link is removed first, leaving a junction-free folder that a recursive delete can clear safely.</p>
+    <figure class="listing"><figcaption><code>md_delete_account(folder_id, delete_saves=false)</code>.</figcaption>
+<pre class="code"><code>1. install = <span class="fn">paths::find_install</span>()?
+2. <span class="k">if</span> <span class="fn">process::is_running</span>()?: <span class="t">Err</span>(<span class="fn">GameRunning</span>(<span class="s">"master_duel"</span>))
+3. acct = install/<span class="s">"LocalData"</span>/folder_id            <span class="cm">// the whole per-account folder</span>
+   <span class="k">if</span> !acct.<span class="fn">exists</span>(): <span class="t">Err</span>(<span class="fn">AccountNotFound</span>(folder_id))
+4. <span class="cm">// unlink any junction INSIDE acct first (e.g. 0000 → DATA)</span>
+   <span class="k">for</span> child <span class="k">in</span> <span class="fn">fs::read_dir</span>(&amp;acct) {
+       <span class="k">if</span> <span class="fn">junction::exists</span>(&amp;child)? { <span class="fn">fs::remove_dir</span>(&amp;child)? }   <span class="cm">// link only</span>
+   }
+5. <span class="fn">fs::remove_dir_all</span>(&amp;acct)?         <span class="cm">// junction-free now: only this account's data</span>
+6. <span class="k">if</span> delete_saves {
+       saves = install/<span class="s">"LocalSave"</span>/folder_id
+       <span class="k">if</span> saves.<span class="fn">exists</span>() { <span class="fn">fs::remove_dir_all</span>(&amp;saves)? }
+   }
+7. <span class="fn">csv::remove_account</span>(folder_id)?      <span class="cm">// drop the row from accounts.csv</span></code></pre></figure>
+    <p class="note danger"><span class="lbl">Critical —</span> remove the inner junction with <code>remove_dir</code> <em>before</em> <code>remove_dir_all</code> on the account folder (steps 4 → 5). Reversing them lets the recursive delete follow the <code>0000</code> link into <code>DATA\0000\</code> and wipe the shared cache.</p>
+    <p class="note danger"><span class="lbl">Caution —</span> <code>deleteSaves=true</code> removes <code>LocalSave\&lt;id&gt;</code> — the decks and collection for that local profile — and it can't be undone. Default it <code>false</code>, take a per-delete confirmation, and offer <b>Export</b> first.</p>
+
+    <h3 class="sub">Exporting account info</h3>
+    <p>Export gathers the account list — folder id, name, type, and link state — and serializes it so the user can keep a copy or re-import it on another machine. It is read-only and never alters the install.</p>
+    <figure class="listing"><figcaption><code>md_export_accounts() -&gt; String</code> (JSON).</figcaption>
+<pre class="code"><code>1. accounts = <span class="fn">md_list_accounts</span>()?              <span class="cm">// folder_id, name, type, linked</span>
+2. json = <span class="fn">serde_json::to_string_pretty</span>(&amp;accounts)?
+3. <span class="k">return</span> <span class="t">Ok</span>(json)                       <span class="cm">// frontend saves it via a "Save as…" dialog</span></code></pre></figure>
+    <p class="note tip"><span class="lbl">Note —</span> the page offers <b>Export</b> as the safe step before a destructive delete, and the same JSON is the basis for the planned account-import feature.</p>
+    <p class="done"><span class="lbl">Done when —</span> each command matches its listing on a tempdir layout — including the unlink and delete junction-safety paths — and the Master Duel integration test is green.</p>
   </section>
 
   <!-- ===================== SECTION 9 ===================== -->
@@ -465,8 +542,11 @@ ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</sp
       <li>Inline name and type editing invoke <code>md_save_metadata</code>, which upserts <code>accounts.csv</code>.</li>
       <li>Toggling a non-empty folder on prompts for the <code>force</code> confirmation before replacing it.</li>
       <li>A shared-cache summary (path and size) and a legend for linked, normal, main, and sub states.</li>
+      <li>A per-row <b>Delete</b> action: it confirms, offers <b>Export</b> first, then calls <code>md_delete_account</code> — with a separate, clearly-marked checkbox to also remove the account's saves (<code>deleteSaves</code>, default off).</li>
+      <li>An <b>Export</b> button that calls <code>md_export_accounts</code> and saves the returned JSON through a file dialog.</li>
     </ul>
-    <p class="note warn"><span class="lbl">Running guard —</span> while <code>masterduel.exe</code> is running, every toggle is disabled and a banner is shown; any link or unlink attempt fails with <code>GameRunning</code>, surfaced as an error toast.</p>
+    <p class="note warn"><span class="lbl">Running guard —</span> while <code>masterduel.exe</code> is running, every toggle is disabled and a banner is shown; any link, unlink, or delete attempt fails with <code>GameRunning</code>, surfaced as an error toast.</p>
+    <p class="done"><span class="lbl">Done when —</span> <code>/games/master-duel</code> shows the per-account table with link toggle, inline edit, delete (confirm + saves opt-in), and export, and the running guard blocks edits while <code>masterduel.exe</code> is up.</p>
   </section>
 
   <!-- ===================== SECTION 10 ===================== -->
@@ -488,6 +568,8 @@ ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</sp
         <tr><td><code>md_is_linked</code></td><td><code>{ folderId }</code></td><td><code>bool</code></td><td>missing path gives <code>false</code></td></tr>
         <tr><td><code>md_save_metadata</code></td><td><code>{ folderId, accountName, accountType }</code></td><td><code>()</code></td><td>upsert <code>accounts.csv</code></td></tr>
         <tr><td><code>md_is_running</code></td><td>—</td><td><code>bool</code></td><td><code>masterduel.exe</code> present</td></tr>
+        <tr><td><code>md_delete_account</code></td><td><code>{ folderId, deleteSaves? }</code></td><td><code>()</code></td><td>unlink any junction, remove the account folder + CSV row; removes <code>LocalSave\&lt;id&gt;</code> only if <code>deleteSaves</code></td></tr>
+        <tr><td><code>md_export_accounts</code></td><td>—</td><td><code>String</code></td><td>account list as JSON, for save / re-import</td></tr>
         <tr><td><code>list_supported_games</code></td><td>—</td><td><code>GameInfo[]</code></td><td><code>[]</code> on macOS/Linux for v0.1</td></tr>
       </tbody>
     </table></div></figure>
@@ -513,6 +595,45 @@ ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</sp
   isLinked: <span class="t">boolean</span>;
 }
 <span class="k">export</span> <span class="k">interface</span> <span class="t">GameInfo</span> { id: <span class="t">string</span>; displayName: <span class="t">string</span>; installed: <span class="t">boolean</span>; }</code></pre></figure>
+    <figure class="listing"><figcaption>Rust command signatures (<code>steam/commands.rs</code>, <code>games/master_duel/commands.rs</code>).</figcaption>
+<pre class="code"><code><span class="cm">// steam/commands.rs</span>
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">steam_list_accounts</span>() -&gt; <span class="t">AppResult</span>&lt;<span class="t">Vec</span>&lt;<span class="t">SteamAccount</span>&gt;&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">steam_switch_account</span>(account_name: <span class="t">String</span>, offline_mode: <span class="t">Option</span>&lt;<span class="t">bool</span>&gt;) -&gt; <span class="t">AppResult</span>&lt;()&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">steam_clear_login</span>() -&gt; <span class="t">AppResult</span>&lt;()&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">steam_kill</span>() -&gt; <span class="t">AppResult</span>&lt;()&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">steam_start</span>() -&gt; <span class="t">AppResult</span>&lt;()&gt;;
+
+<span class="cm">// games/master_duel/commands.rs   (entire module is #[cfg(windows)])</span>
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">md_list_accounts</span>() -&gt; <span class="t">AppResult</span>&lt;<span class="t">Vec</span>&lt;<span class="t">MdAccount</span>&gt;&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">md_link_account</span>(folder_id: <span class="t">String</span>, force: <span class="t">Option</span>&lt;<span class="t">bool</span>&gt;) -&gt; <span class="t">AppResult</span>&lt;()&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">md_unlink_account</span>(folder_id: <span class="t">String</span>) -&gt; <span class="t">AppResult</span>&lt;()&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">md_is_linked</span>(folder_id: <span class="t">String</span>) -&gt; <span class="t">AppResult</span>&lt;<span class="t">bool</span>&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">md_save_metadata</span>(folder_id: <span class="t">String</span>, account_name: <span class="t">String</span>, account_type: <span class="t">String</span>) -&gt; <span class="t">AppResult</span>&lt;()&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">md_is_running</span>() -&gt; <span class="t">AppResult</span>&lt;<span class="t">bool</span>&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">md_delete_account</span>(folder_id: <span class="t">String</span>, delete_saves: <span class="t">Option</span>&lt;<span class="t">bool</span>&gt;) -&gt; <span class="t">AppResult</span>&lt;()&gt;;
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">md_export_accounts</span>() -&gt; <span class="t">AppResult</span>&lt;<span class="t">String</span>&gt;;
+
+<span class="cm">// discovery</span>
+<span class="at">#[tauri::command]</span> <span class="k">pub</span> <span class="k">async</span> <span class="k">fn</span> <span class="fn">list_supported_games</span>() -&gt; <span class="t">AppResult</span>&lt;<span class="t">Vec</span>&lt;<span class="t">GameInfo</span>&gt;&gt;;</code></pre></figure>
+    <p class="note info"><span class="lbl">Arg casing —</span> the JS side passes camelCase keys (<code>accountName</code>, <code>folderId</code>, <code>deleteSaves</code>); the commands carry <code>#[tauri::command(rename_all = "camelCase")]</code> so they map onto the snake_case parameters above.</p>
+    <figure class="listing"><figcaption>TypeScript API wrappers (<code>src/lib/api/*.ts</code>) — the only callers of <code>invoke</code>.</figcaption>
+<pre class="code"><code><span class="cm">// src/lib/api/steam.ts</span>
+<span class="k">export</span> <span class="k">function</span> <span class="fn">listAccounts</span>(): <span class="t">Promise</span>&lt;<span class="t">SteamAccount</span>[]&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">switchAccount</span>(accountName: <span class="t">string</span>, offlineMode?: <span class="t">boolean</span>): <span class="t">Promise</span>&lt;<span class="t">void</span>&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">clearLogin</span>(): <span class="t">Promise</span>&lt;<span class="t">void</span>&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">killSteam</span>(): <span class="t">Promise</span>&lt;<span class="t">void</span>&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">startSteam</span>(): <span class="t">Promise</span>&lt;<span class="t">void</span>&gt;;
+
+<span class="cm">// src/lib/api/games/master-duel.ts</span>
+<span class="k">export</span> <span class="k">function</span> <span class="fn">listAccounts</span>(): <span class="t">Promise</span>&lt;<span class="t">MdAccount</span>[]&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">linkAccount</span>(folderId: <span class="t">string</span>, force?: <span class="t">boolean</span>): <span class="t">Promise</span>&lt;<span class="t">void</span>&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">unlinkAccount</span>(folderId: <span class="t">string</span>): <span class="t">Promise</span>&lt;<span class="t">void</span>&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">isLinked</span>(folderId: <span class="t">string</span>): <span class="t">Promise</span>&lt;<span class="t">boolean</span>&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">saveMetadata</span>(folderId: <span class="t">string</span>, accountName: <span class="t">string</span>, accountType: <span class="s">"main"</span>|<span class="s">"sub"</span>|<span class="s">""</span>): <span class="t">Promise</span>&lt;<span class="t">void</span>&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">isRunning</span>(): <span class="t">Promise</span>&lt;<span class="t">boolean</span>&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">deleteAccount</span>(folderId: <span class="t">string</span>, deleteSaves?: <span class="t">boolean</span>): <span class="t">Promise</span>&lt;<span class="t">void</span>&gt;;
+<span class="k">export</span> <span class="k">function</span> <span class="fn">exportAccounts</span>(): <span class="t">Promise</span>&lt;<span class="t">string</span>&gt;;</code></pre></figure>
+    <p class="done"><span class="lbl">Done when —</span> every command in the table is registered in <code>main.rs</code> and reachable through its <code>api/*.ts</code> wrapper.</p>
   </section>
 
   <!-- ===================== SECTION 11 ===================== -->
@@ -544,6 +665,7 @@ ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</sp
       <li>Toggle while Master Duel runs; an error toast reports the game is running. Close it; the toggle works.</li>
       <li>Untoggle; the folder is a normal directory again, with 256 buckets and <code>root</code>.</li>
     </ol>
+    <p class="done"><span class="lbl">Done when —</span> <code>cargo test</code> passes (unit + tempdir integration) and the manual checklist passes on a real Windows&nbsp;11 install.</p>
   </section>
 
   <!-- ===================== SECTION 12 ===================== -->
@@ -553,6 +675,7 @@ ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</sp
     <figure class="listing"><figcaption>Producing the release build.</figcaption>
 <pre class="code"><code><span class="fn">pnpm</span> tauri build        <span class="cm"># → stripped .exe + .msi installer</span></code></pre></figure>
     <p>With the release-profile settings shown earlier (<code>opt-level="z"</code>, link-time optimization, <code>panic="abort"</code>, and <code>strip</code>), the stripped Windows binary should come in under 6&nbsp;MB. Going over that budget counts as a regression to investigate.</p>
+    <p class="done"><span class="lbl">Done when —</span> <code>pnpm tauri build</code> produces a stripped binary under 6&nbsp;MB plus the <code>.msi</code> installer.</p>
   </section>
 
   <!-- ===================== APPENDIX A ===================== -->
@@ -565,9 +688,10 @@ ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</sp
       <li><code>steamId64</code> is a string in TypeScript, never a number.</li>
       <li><code>force=true</code> on link silently destroys 13&nbsp;GB if misused — default it <code>false</code>.</li>
       <li><code>remove_dir</code> versus <code>remove_dir_all</code> on unlink — the wrong one erases the shared cache.</li>
+      <li>On <b>delete</b>, unlink the inner junction <em>before</em> <code>remove_dir_all</code> on the account folder — otherwise the recursive delete follows the <code>0000</code> link into the shared cache.</li>
       <li>There are two spaces in <code>Yu-Gi-Oh!  Master Duel</code> — do not normalize them.</li>
       <li>Never touch <code>ssfn*</code> — those are the credentials.</li>
-      <li>Never touch <code>LocalSave\</code> — that is save data.</li>
+      <li>Never touch <code>LocalSave\</code> in link/unlink — only an explicit account delete with <code>deleteSaves</code> may remove it.</li>
       <li><code>registry.vdf</code> is not the Windows registry, despite the name.</li>
       <li>Never test against the real install — always use <code>tempdir()</code>.</li>
       <li><code>md_is_linked</code> on a missing path returns <code>false</code>, not an error.</li>
@@ -591,7 +715,7 @@ ff5f260a,sub,M∀LICE           <span class="cm"># special unicode permitted</sp
     <h3 class="sub">Roadmap — beyond v0.1</h3>
     <div class="roadmap">
       <p><span class="yr">v0.2.</span> Linux and macOS Steam support, <code>registry.vdf</code> patching, persona state, avatar fetching, a "currently signed in as" indicator, a tray quick-switch, a Master Duel filesystem watcher, disk-space estimates, bulk link and unlink, a settings page, and a continuous-integration (CI) build matrix.</p>
-      <p><span class="yr">v0.3.</span> A Family Share manager, avatar-<code>.ico</code> shortcuts, support for platforms beyond Steam, account import and export, and direct <code>loginusers.vdf</code> management.</p>
+      <p><span class="yr">v0.3.</span> A Family Share manager, avatar-<code>.ico</code> shortcuts, support for platforms beyond Steam, Master Duel account import (export already ships on the asset-linking page), and direct <code>loginusers.vdf</code> management.</p>
       <p><span class="yr">Stretch.</span> A command-line mode, a headless tray daemon, an auto-updater, and further game modules.</p>
       <p><span class="yr">Localization.</span> A future, not-yet-scheduled feature: a localized interface in English, 日本語, and 简体中文 — Master Duel's player base skews Japanese and Chinese, so it would widen reach.</p>
     </div>
