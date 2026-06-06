@@ -1,4 +1,5 @@
-//! Locate Steam install dir / loginusers.vdf / etc., per OS.
+//! Locate Steam install dir / loginusers.vdf / etc. Windows-only: reads the
+//! Steam install path from the Windows registry (`winreg`).
 
 use std::path::PathBuf;
 

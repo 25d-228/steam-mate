@@ -83,9 +83,11 @@ fn account_name_of<'a>(user: &'a Obj<'_>) -> Option<&'a str> {
 /// Rewrite `loginusers.vdf` text so `account_name` becomes the active user.
 ///
 /// Sets `MostRecent=1` and `RememberPassword=1` on the matching block and
-/// `MostRecent=0` on every other block. When `offline_mode` is set, also flips
-/// `WantsOfflineMode=1` + `SkipOfflineModeWarning=1` on the target. Returns the
-/// re-rendered text (ready to write back).
+/// `MostRecent=0` on every other block. The target's `WantsOfflineMode` +
+/// `SkipOfflineModeWarning` are set to `1` when `offline_mode` is true and
+/// explicitly cleared to `0` otherwise — so an online switch always cancels a
+/// previously-requested offline launch rather than leaving it stuck. Returns
+/// the re-rendered text (ready to write back).
 ///
 /// Matching is by the `AccountName` *field* — the block key is the SteamID64,
 /// which callers don't have. A round-trip through [`keyvalues_parser`] preserves
@@ -113,10 +115,12 @@ pub fn set_active_account(
                 found = true;
                 set_str(user, "MostRecent", "1");
                 set_str(user, "RememberPassword", "1");
-                if offline_mode {
-                    set_str(user, "WantsOfflineMode", "1");
-                    set_str(user, "SkipOfflineModeWarning", "1");
-                }
+                // Set the offline flags when requested, and clear them when not
+                // — otherwise an account launched offline once could never be
+                // switched back online from here.
+                let offline = if offline_mode { "1" } else { "0" };
+                set_str(user, "WantsOfflineMode", offline);
+                set_str(user, "SkipOfflineModeWarning", offline);
             } else {
                 set_str(user, "MostRecent", "0");
             }
@@ -124,6 +128,52 @@ pub fn set_active_account(
     }
 
     if !found {
+        return Err(AppError::AccountNotFound(account_name.to_owned()));
+    }
+    Ok(vdf.to_string())
+}
+
+/// Remove every block whose `AccountName` field equals `account_name` from
+/// `loginusers.vdf`, returning the re-rendered text.
+///
+/// Each entry in the `users` object maps a SteamID64 key to a `Vec<Value>`. We
+/// scan those vecs for matching `Obj` values: when a key's vec contains only
+/// matches we drop the whole key, otherwise we strip just the matching values
+/// and keep the rest. Keys are collected before mutation so we never invalidate
+/// the `BTreeMap` while iterating it. Errors with [`AppError::AccountNotFound`]
+/// if nothing matched — we don't silently no-op.
+pub fn remove_account(text: &str, account_name: &str) -> AppResult<String> {
+    let partial =
+        keyvalues_parser::parse(text).map_err(|e| AppError::VdfParse(e.to_string()))?;
+    let mut vdf = Vdf::from(partial);
+    let users = vdf
+        .value
+        .get_mut_obj()
+        .ok_or_else(|| AppError::VdfParse("root is not an object".into()))?;
+
+    let mut removed = false;
+    // Keys whose vec ends up empty after filtering, removed in a second pass.
+    let mut empty_keys: Vec<String> = Vec::new();
+
+    for (key, values) in users.iter_mut() {
+        let before = values.len();
+        values.retain(|value| match value {
+            Value::Obj(user) => account_name_of(user) != Some(account_name),
+            _ => true,
+        });
+        if values.len() != before {
+            removed = true;
+        }
+        if values.is_empty() {
+            empty_keys.push(key.to_string());
+        }
+    }
+
+    for key in empty_keys {
+        users.remove(key.as_str());
+    }
+
+    if !removed {
         return Err(AppError::AccountNotFound(account_name.to_owned()));
     }
     Ok(vdf.to_string())
@@ -199,6 +249,21 @@ mod tests {
     }
 
     #[test]
+    fn online_switch_clears_offline_flags_on_target() {
+        // Launch bob offline, then switch back online: the offline flags must be
+        // cleared, not left stuck at 1.
+        let offline = set_active_account(FIXTURE, "bob", true).unwrap();
+        let offline_accounts = parse_loginusers(&offline).unwrap();
+        assert!(account(&offline_accounts, "bob").wants_offline_mode);
+
+        let online = set_active_account(&offline, "bob", false).unwrap();
+        let online_accounts = parse_loginusers(&online).unwrap();
+        let bob = account(&online_accounts, "bob");
+        assert!(!bob.wants_offline_mode);
+        assert!(!bob.skip_offline_mode_warning);
+    }
+
+    #[test]
     fn unknown_account_is_not_found() {
         let err = set_active_account(FIXTURE, "nobody", false).unwrap_err();
         assert!(matches!(err, AppError::AccountNotFound(name) if name == "nobody"));
@@ -217,5 +282,32 @@ mod tests {
         before_ids.sort();
         after_ids.sort();
         assert_eq!(before_ids, after_ids);
+    }
+
+    #[test]
+    fn remove_drops_only_the_named_account() {
+        let updated = remove_account(FIXTURE, "bob").unwrap();
+        let accounts = parse_loginusers(&updated).unwrap();
+
+        assert_eq!(accounts.len(), 2);
+        assert!(accounts.iter().all(|a| a.account_name != "bob"));
+        // The survivors are intact.
+        assert_eq!(account(&accounts, "alice").steam_id64, "76561198000000001");
+        assert_eq!(account(&accounts, "carol").persona_name, "キャロル");
+    }
+
+    #[test]
+    fn remove_unknown_account_is_not_found() {
+        let err = remove_account(FIXTURE, "nobody").unwrap_err();
+        assert!(matches!(err, AppError::AccountNotFound(name) if name == "nobody"));
+    }
+
+    #[test]
+    fn remove_output_re_parses_cleanly() {
+        let updated = remove_account(FIXTURE, "carol").unwrap();
+        // A second parse must succeed (valid VDF) and reflect the removal.
+        let accounts = parse_loginusers(&updated).unwrap();
+        assert_eq!(accounts.len(), 2);
+        assert!(accounts.iter().all(|a| a.account_name != "carol"));
     }
 }
