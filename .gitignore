@@ -10,3 +10,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 /docs/learning/
 .claude/
+
+# tauri icon also emits mobile sets; this app is Windows-only
+src-tauri/icons/android/
+src-tauri/icons/ios/

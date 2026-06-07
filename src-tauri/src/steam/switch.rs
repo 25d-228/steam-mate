@@ -94,3 +94,63 @@ pub fn forget_account(account_name: &str) -> AppResult<()> {
     atomic_write(&vdf_path, &new_text)?;
     Ok(())
 }
+
+/// Forget several remembered accounts in one pass, returning how many were
+/// actually removed.
+///
+/// Unlike calling [`forget_account`] per name, this kills Steam once, reads
+/// `loginusers.vdf` once, applies [`vdf::remove_account`] successively over the
+/// in-memory text for each name, and writes once. A name that isn't present
+/// ([`AppError::AccountNotFound`]) is skipped rather than aborting the batch —
+/// only genuine parse failures propagate — so the count reflects the accounts
+/// that existed and were dropped. If nothing matched, the file is left untouched
+/// (no needless rewrite) and `0` is returned, but Steam is still stopped first
+/// (the caller asked to forget, and a no-op write is cheap to skip).
+///
+/// After a successful write, if the registry's remembered auto-login user was
+/// among the removed names, the auto-login keys are cleared so Steam doesn't try
+/// to sign straight into an account that no longer has a saved login. A failure
+/// to clear is swallowed — the accounts are already gone, which is the contract.
+pub fn forget_accounts(account_names: &[String]) -> AppResult<u32> {
+    // Stop Steam BEFORE reading: Steam rewrites loginusers.vdf while running
+    // and on exit, so a read taken first could capture text Steam is about to
+    // supersede — our later write would then silently clobber Steam's (the
+    // single-account forget kills first for the same reason). No-op if Steam
+    // isn't running.
+    let install = paths::get_steam_install_path()?;
+    process::kill_steam(&install.join("Steam.exe"))?;
+
+    let vdf_path = paths::loginusers_vdf_path()?;
+    let text = fs::read_to_string(&vdf_path).map_err(|_| AppError::SteamNotInstalled)?;
+
+    // Apply each removal to the running text. Skip names that aren't present;
+    // surface only real parse failures.
+    let mut current = text;
+    let mut removed: Vec<&str> = Vec::new();
+    for name in account_names {
+        match vdf::remove_account(&current, name) {
+            Ok(next) => {
+                current = next;
+                removed.push(name.as_str());
+            }
+            Err(AppError::AccountNotFound(_)) => continue,
+            Err(e) => return Err(e),
+        }
+    }
+
+    if removed.is_empty() {
+        return Ok(0);
+    }
+
+    atomic_write(&vdf_path, &current)?;
+
+    // If the auto-login user was one of the removed accounts, clear the
+    // registry keys so Steam lands on the login screen instead of an orphan.
+    if let Some(active) = registry::get_auto_login_user() {
+        if removed.iter().any(|name| *name == active) {
+            let _ = registry::clear_auto_login_user();
+        }
+    }
+
+    Ok(removed.len() as u32)
+}

@@ -69,6 +69,14 @@ cargo test --manifest-path src-tauri/Cargo.toml
   existing profile's data, so linking works on a fresh machine.
 - **Show the signed-in account in the assignment menu** — each Master Duel
   dropdown marks the Steam account that is currently logged in.
+- **Card / list view** — both panels can switch between the current list and a
+  card grid (large avatars, status at a glance); the choice is remembered.
+- **Reveal in folder** — a button on the shared-cache box opens
+  `LocalData\DATA\0000` in File Explorer.
+- **Copy the install path** — a button next to each "Installed at" line puts
+  the exact path on the clipboard. Selecting the label by hand drops one of
+  the two spaces in `Yu-Gi-Oh!  Master Duel` and yields a path that does not
+  exist.
 - A tray menu for switching without opening the window, and a "signed in as"
   line in the header.
 - An in-app updater, once releases are hosted.

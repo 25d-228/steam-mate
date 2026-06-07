@@ -102,13 +102,30 @@ pub fn link_account(
     junction::create(shared, acct_0000).map_err(AppError::from)
 }
 
+/// Build the empty `0000` folder skeleton the game expects at `dir`.
+///
+/// Creates `dir` itself plus the 256 two-hex-digit subdirectories `00`..=`ff`
+/// and a `root` folder — exactly what a freshly-unlinked or freshly-created
+/// shared cache holds before the game writes any assets. Shared by
+/// [`unlink_account`] (rebuilding an account's own folder) and
+/// [`create_cache`] (laying down an empty shared cache).
+pub fn build_skeleton(dir: &Path) -> AppResult<()> {
+    std::fs::create_dir_all(dir)?;
+    for n in 0u16..=0xff {
+        std::fs::create_dir_all(dir.join(format!("{n:02x}")))?;
+    }
+    std::fs::create_dir_all(dir.join("root"))?;
+    Ok(())
+}
+
 /// Replace a `0000` junction with a fresh, empty real folder structure.
 ///
 /// `acct_0000` must currently be a junction (`JunctionFailed("not a
 /// junction")` otherwise). Refuses while the game is `running`. Removes the
 /// junction with `fs::remove_dir` — NEVER `remove_dir_all`, which would follow
 /// the link into the shared cache — then recreates the directory plus the 256
-/// hex subdirectories `00`..=`ff` and a `root` folder that the game expects.
+/// hex subdirectories `00`..=`ff` and a `root` folder that the game expects
+/// (via the shared [`build_skeleton`]).
 pub fn unlink_account(acct_0000: &Path, running: bool) -> AppResult<()> {
     if !junction::exists(acct_0000).unwrap_or(false) {
         return Err(AppError::JunctionFailed("not a junction".into()));
@@ -120,12 +137,70 @@ pub fn unlink_account(acct_0000: &Path, running: bool) -> AppResult<()> {
     // Remove the link only — do not recurse into the shared target.
     std::fs::remove_dir(acct_0000)?;
 
-    std::fs::create_dir_all(acct_0000)?;
-    for n in 0u16..=0xff {
-        std::fs::create_dir_all(acct_0000.join(format!("{n:02x}")))?;
+    build_skeleton(acct_0000)
+}
+
+/// Create the shared cache at `shared` (`<install>/LocalData/DATA/0000`).
+///
+/// Refuses while the game is `running` ([`AppError::GameRunning`]); refuses if
+/// `shared` already exists ([`AppError::JunctionFailed`]) so an existing cache
+/// is never clobbered. Two modes:
+///
+/// - `seed = Some(seed_0000)`: the seed account's real `0000` folder is *moved*
+///   (renamed) into place as the new shared cache, then a junction is created
+///   back at the seed's old `0000` location pointing at it. A rename on one
+///   volume is instant and copies nothing. If the junction can't be created the
+///   move is reverted (the folder renamed back) before the error returns, so the
+///   seed is never stranded. `seed_0000` must be a real directory (its parent is
+///   the seed account folder).
+/// - `seed = None`: an empty skeleton is laid down at `shared` via
+///   [`build_skeleton`] (root + the 256 hex subfolders).
+///
+/// `shared`'s parent (`.../DATA`) is created as needed in both modes. Like the
+/// other mutators here, `running` is passed in (the command layer supplies
+/// [`is_running`]) so tests can drive it without a live process.
+pub fn create_cache(shared: &Path, seed: Option<&Path>, running: bool) -> AppResult<()> {
+    if running {
+        return Err(AppError::GameRunning("master_duel"));
     }
-    std::fs::create_dir_all(acct_0000.join("root"))?;
-    Ok(())
+    if shared.exists() {
+        return Err(AppError::JunctionFailed(
+            "shared cache already exists".into(),
+        ));
+    }
+    // Ensure the DATA parent exists for the rename / skeleton target.
+    let data_dir = shared
+        .parent()
+        .ok_or_else(|| AppError::JunctionFailed("shared cache has no parent".into()))?;
+    std::fs::create_dir_all(data_dir)?;
+
+    match seed {
+        Some(seed_0000) => {
+            // Move the seed's own assets into the shared location (instant,
+            // same-volume rename — nothing copied)...
+            std::fs::rename(seed_0000, shared)?;
+            // ...then point the seed's old 0000 at the new shared cache. If the
+            // junction can't be made, undo the move so the seed isn't stranded.
+            if let Err(e) = junction::create(shared, seed_0000) {
+                // junction::create makes the directory first and sets the
+                // reparse point second, so a failure can leave a plain empty
+                // dir at seed_0000 — which would block the rename-back. Clear
+                // it first: remove_dir is safe on an empty dir or a half-made
+                // junction and never recurses into the moved cache.
+                let _ = std::fs::remove_dir(seed_0000);
+                if std::fs::rename(shared, seed_0000).is_err() {
+                    return Err(AppError::JunctionFailed(format!(
+                        "junction failed and the cache could not be moved back \
+                         — it is intact at {} (move it back by hand): {e}",
+                        shared.display()
+                    )));
+                }
+                return Err(AppError::from(e));
+            }
+            Ok(())
+        }
+        None => build_skeleton(shared),
+    }
 }
 
 /// Permanently delete an account folder (LocalData) and its saves (LocalSave).
@@ -164,6 +239,58 @@ pub fn delete_account(
         std::fs::remove_dir_all(&save)?;
     }
     Ok(())
+}
+
+/// Scan `local_data` for profiles that could seed a new shared cache.
+///
+/// Returns `(folder_id, size_bytes)` for each profile whose own `0000` is a
+/// REAL directory (not a junction — a linked profile already points at a cache)
+/// holding at least one file (an empty `0000` carries no cache to move). The
+/// shared `DATA` folder is skipped, as are non-directory entries. Sorted by
+/// `size_bytes` descending so the most complete cache is offered first. The
+/// caller joins each `folder_id` to its `accounts.csv` label; the junction +
+/// size logic lives here so it can be exercised in a tempdir.
+pub fn seed_candidates(local_data: &Path) -> AppResult<Vec<(String, u64)>> {
+    let mut candidates = Vec::new();
+    if local_data.exists() {
+        for entry in std::fs::read_dir(local_data)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let folder_id = entry.file_name().to_string_lossy().into_owned();
+            // The shared cache lives under DATA, not a seedable profile.
+            if folder_id == "DATA" {
+                continue;
+            }
+            let acct_0000 = entry.path().join("0000");
+            // Skip linked (already points at a cache) and absent folders.
+            if is_linked(&acct_0000).unwrap_or(false) || !acct_0000.exists() {
+                continue;
+            }
+            // Need at least one real file to seed a cache from.
+            let size_bytes = cache_size(&acct_0000);
+            if size_bytes == 0 {
+                continue;
+            }
+            candidates.push((folder_id, size_bytes));
+        }
+    }
+    // Largest cache first — seed from the most complete profile.
+    candidates.sort_by_key(|(_, size)| std::cmp::Reverse(*size));
+    Ok(candidates)
+}
+
+/// Whether `acct_0000` holds at least one real file — i.e. it is an actual
+/// cache copy, not the empty skeleton an unlink leaves behind (the skeleton is
+/// 257 directories with no files). Short-circuits at the first file found, so
+/// a full 13 GB cache answers immediately. Callers must check `is_linked`
+/// first: walking a junction would happily count the shared cache's files.
+pub fn has_files(acct_0000: &Path) -> bool {
+    WalkDir::new(acct_0000)
+        .into_iter()
+        .filter_map(Result::ok)
+        .any(|e| e.file_type().is_file())
 }
 
 /// Total byte size of the shared cache (sum of file lengths). 0 if missing.
@@ -345,5 +472,103 @@ mod tests {
         assert_eq!(cache_size(&shared), 8);
         // Missing dir ⇒ 0.
         assert_eq!(cache_size(&dir.path().join("absent")), 0);
+    }
+
+    #[test]
+    fn build_skeleton_creates_root_and_256_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("0000");
+        build_skeleton(&target).unwrap();
+        // 256 hex dirs + "root" = 257 entries.
+        assert_eq!(fs::read_dir(&target).unwrap().count(), 257);
+        assert!(target.join("00").is_dir());
+        assert!(target.join("ff").is_dir());
+        assert!(target.join("root").is_dir());
+    }
+
+    #[test]
+    fn create_cache_empty_lays_down_skeleton() {
+        let dir = tempfile::tempdir().unwrap();
+        // DATA does not exist yet — create_cache must make it then the skeleton.
+        let shared = dir.path().join("LocalData").join("DATA").join("0000");
+        create_cache(&shared, None, false).unwrap();
+        assert!(shared.is_dir());
+        assert_eq!(fs::read_dir(&shared).unwrap().count(), 257);
+    }
+
+    #[test]
+    fn create_cache_refuses_when_shared_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("DATA").join("0000");
+        fs::create_dir_all(&shared).unwrap();
+        let err = create_cache(&shared, None, false).unwrap_err();
+        assert!(matches!(err, AppError::JunctionFailed(_)));
+    }
+
+    #[test]
+    fn create_cache_refuses_when_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("DATA").join("0000");
+        let err = create_cache(&shared, None, true).unwrap_err();
+        assert!(matches!(err, AppError::GameRunning("master_duel")));
+        // Nothing was created.
+        assert!(!shared.exists());
+    }
+
+    #[test]
+    fn seed_candidates_returns_unlinked_with_files_and_skips_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = make_shared(dir.path());
+        let local_data = dir.path().join("LocalData");
+
+        // A: unlinked 0000 holding a real file — a candidate.
+        let a0000 = local_data.join("aaaa").join("0000");
+        fs::create_dir_all(&a0000).unwrap();
+        fs::write(a0000.join("big.bin"), b"0123456789").unwrap(); // 10 bytes
+
+        // B: unlinked 0000 holding more bytes — a larger candidate.
+        let b0000 = local_data.join("bbbb").join("0000");
+        fs::create_dir_all(&b0000).unwrap();
+        fs::write(b0000.join("big.bin"), b"0123456789abcdef").unwrap(); // 16 bytes
+
+        // C: linked 0000 (junction into shared) — skipped.
+        let c0000 = local_data.join("cccc").join("0000");
+        fs::create_dir_all(c0000.parent().unwrap()).unwrap();
+        link_account(&shared, &c0000, false, false).unwrap();
+        assert!(is_linked(&c0000).unwrap());
+
+        // D: empty 0000 (no files) — skipped.
+        let d0000 = local_data.join("dddd").join("0000");
+        fs::create_dir_all(&d0000).unwrap();
+
+        // DATA: the shared cache folder itself — never a candidate.
+        fs::create_dir_all(local_data.join("DATA").join("0000")).unwrap();
+        fs::write(local_data.join("DATA").join("0000").join("x.bin"), b"z").unwrap();
+
+        let cands = seed_candidates(&local_data).unwrap();
+        let ids: Vec<&str> = cands.iter().map(|(id, _)| id.as_str()).collect();
+        // Only the two unlinked-with-files profiles, largest first.
+        assert_eq!(ids, vec!["bbbb", "aaaa"]);
+        assert_eq!(cands[0].1, 16);
+        assert_eq!(cands[1].1, 10);
+    }
+
+    #[test]
+    fn create_cache_seed_moves_folder_and_links_back() {
+        let dir = tempfile::tempdir().unwrap();
+        // A seed profile whose own 0000 holds a sentinel file.
+        let seed_0000 = dir.path().join("LocalData").join("seed").join("0000");
+        fs::create_dir_all(&seed_0000).unwrap();
+        fs::write(seed_0000.join("sentinel.bin"), b"precious cache data").unwrap();
+
+        let shared = dir.path().join("LocalData").join("DATA").join("0000");
+        create_cache(&shared, Some(&seed_0000), false).unwrap();
+
+        // The sentinel now lives in the shared cache (folder was moved, not copied).
+        assert!(shared.join("sentinel.bin").exists());
+        // The seed's old 0000 is now a junction...
+        assert!(is_linked(&seed_0000).unwrap());
+        // ...and reading through it sees the moved sentinel.
+        assert!(seed_0000.join("sentinel.bin").exists());
     }
 }

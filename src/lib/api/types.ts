@@ -22,6 +22,8 @@ export interface MdAccount {
   accountName: string;
   isLinked: boolean;
   steamLogin: string;
+  /** Not linked, but the profile's 0000 still holds its own copy of the cache. */
+  hasFiles: boolean;
 }
 
 export type AppErrorKind =

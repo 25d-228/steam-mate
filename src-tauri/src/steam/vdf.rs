@@ -310,4 +310,54 @@ mod tests {
         assert_eq!(accounts.len(), 2);
         assert!(accounts.iter().all(|a| a.account_name != "carol"));
     }
+
+    /// Apply `remove_account` successively over the running text, skipping names
+    /// that aren't present — the exact text transform the batch-forget
+    /// orchestrator (`switch::forget_accounts`) uses, isolated from disk/Steam.
+    fn remove_many<'a>(text: &str, names: &[&'a str]) -> (String, Vec<&'a str>) {
+        let mut current = text.to_string();
+        let mut removed = Vec::new();
+        for name in names {
+            match remove_account(&current, name) {
+                Ok(next) => {
+                    current = next;
+                    removed.push(*name);
+                }
+                Err(AppError::AccountNotFound(_)) => continue,
+                Err(e) => panic!("unexpected parse error: {e:?}"),
+            }
+        }
+        (current, removed)
+    }
+
+    #[test]
+    fn batch_remove_drops_multiple_named_accounts() {
+        let (updated, removed) = remove_many(FIXTURE, &["alice", "carol"]);
+        assert_eq!(removed, vec!["alice", "carol"]);
+
+        let accounts = parse_loginusers(&updated).unwrap();
+        // Only bob survives, intact.
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].account_name, "bob");
+        assert_eq!(accounts[0].steam_id64, "76561198000000002");
+    }
+
+    #[test]
+    fn batch_remove_skips_unknown_and_counts_only_present() {
+        // "nobody" is not in the file: it's skipped, not an error, and not counted.
+        let (updated, removed) = remove_many(FIXTURE, &["bob", "nobody", "carol"]);
+        assert_eq!(removed, vec!["bob", "carol"]);
+
+        let accounts = parse_loginusers(&updated).unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].account_name, "alice");
+    }
+
+    #[test]
+    fn batch_remove_all_present_empties_the_file() {
+        let (updated, removed) = remove_many(FIXTURE, &["alice", "bob", "carol"]);
+        assert_eq!(removed.len(), 3);
+        // Re-parses cleanly to an empty account set.
+        assert!(parse_loginusers(&updated).unwrap().is_empty());
+    }
 }

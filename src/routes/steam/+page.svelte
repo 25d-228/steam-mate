@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { copyText } from "$lib/clipboard";
   import {
     getInstallPath,
     listAccounts,
@@ -36,6 +39,17 @@
   let accounts = $state<SteamAccount[]>([]);
   let offline = $state(false);
   let switching = $state(false);
+
+  // ---- card / list view, remembered per page (default list) ----
+  let view = $state<"list" | "card">("list");
+  function setView(v: "list" | "card") {
+    view = v;
+    try {
+      localStorage.setItem("sm-view-steam", v);
+    } catch {
+      /* ignore */
+    }
+  }
 
   // open folder state, kept in memory across re-renders
   let openFolders = $state(new Set<string>());
@@ -101,6 +115,36 @@
     openFolders = next;
   }
 
+  // ---- batch selection mode ----
+  let selMode = $state(false);
+  let selected = $state(new Set<string>());
+
+  function setSelMode(on: boolean) {
+    selMode = on;
+    selected = new Set();
+  }
+  function toggleSel(key: string) {
+    const next = new Set(selected);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    selected = next;
+  }
+  function selectAll() {
+    // Only what is actually on screen: singles, plus members of folders that
+    // are expanded. Accounts inside a collapsed folder never show a checkbox,
+    // so "select all" must not sweep them in silently.
+    const keys: string[] = [];
+    for (const e of entries) {
+      if ("single" in e) keys.push(e.single.accountName);
+      else if (openFolders.has(e.folder))
+        for (const a of e.items) keys.push(a.accountName);
+    }
+    selected = new Set(keys);
+  }
+  function clearSel() {
+    selected = new Set();
+  }
+
   async function loadAccounts() {
     accounts = await listAccounts();
     steamAccounts.set(accounts);
@@ -135,7 +179,7 @@
   }
 
   async function switchTo(a: SteamAccount) {
-    if (a.mostRecent || switching) return;
+    if (a.mostRecent || switching || selMode) return;
     switching = true;
     const off = offline;
     const disp =
@@ -163,18 +207,65 @@
     }
   }
 
-  // ---- Steam delete (hide / forget) dialog ----
+  // ---- copy the install path ----
+  // The rendered label collapses runs of spaces, so selecting it by hand can
+  // yield an invalid path. The button copies the exact path string the page
+  // already fetched, every space included.
+  async function copyPath(p: string) {
+    if (!p) return;
+    if (await copyText(p)) toast(tNow("toastCopied"), p);
+    else toast("", tNow("errCopy"), true);
+  }
+
+  // ---- Steam delete (hide / forget) dialog: single + batch ----
   let sdelAccount = $state<SteamAccount | null>(null);
+  let sdelBatch = $state<string[] | null>(null);
   let sdelMode = $state<"hide" | "forget">("hide");
 
   function openSDelete(a: SteamAccount) {
     sdelAccount = a;
+    sdelBatch = null;
+    sdelMode = "hide";
+  }
+  function openSDeleteBatch() {
+    if (selected.size === 0) return;
+    sdelBatch = [...selected];
+    sdelAccount = null;
     sdelMode = "hide";
   }
   function closeSDelete() {
     sdelAccount = null;
+    sdelBatch = null;
   }
+
   async function confirmSDelete() {
+    // ---- batch ----
+    if (sdelBatch) {
+      const batch = sdelBatch;
+      const mode = sdelMode;
+      closeSDelete();
+      if (mode === "hide") {
+        const set = new Set(hidden);
+        for (const name of batch) set.add(name);
+        hidden = [...set];
+        saveHidden();
+        setSelMode(false);
+        toast("", fmt(tNow("toastHideN"), { n: batch.length }));
+      } else {
+        try {
+          const n = await invoke<number>("steam_forget_accounts", {
+            accountNames: batch,
+          });
+          await loadAccounts();
+          setSelMode(false);
+          toast("", fmt(tNow("toastForgetN"), { n }));
+        } catch (e) {
+          toastError(e);
+        }
+      }
+      return;
+    }
+    // ---- single ----
     const a = sdelAccount;
     if (!a) return;
     if (sdelMode === "hide") {
@@ -198,15 +289,26 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") closeSDelete();
+    if (e.key === "Escape") {
+      if (sdelAccount || sdelBatch) closeSDelete();
+      else if (selMode) setSelMode(false);
+    }
   }
 
   function onFocus() {
     relist();
   }
 
+  let unlistenTray: UnlistenFn | undefined;
+
   onMount(() => {
     loadHidden();
+    try {
+      const v = localStorage.getItem("sm-view-steam");
+      if (v === "card" || v === "list") view = v;
+    } catch {
+      /* ignore */
+    }
     (async () => {
       try {
         installPath = await getInstallPath();
@@ -217,12 +319,25 @@
     relist();
     window.addEventListener("focus", onFocus);
     window.addEventListener("keydown", onKeydown);
+    // A tray quick-switch changes the active account while this window may
+    // already be visible (no focus event fires) — re-read the list so the
+    // active ring moves.
+    listen("accounts-changed", () => {
+      relist();
+    })
+      .then((un) => {
+        unlistenTray = un;
+      })
+      .catch(() => {
+        /* event API unavailable; ignore */
+      });
   });
   onDestroy(() => {
     if (typeof window !== "undefined") {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("keydown", onKeydown);
     }
+    unlistenTray?.();
   });
 </script>
 
@@ -237,6 +352,15 @@
   <div class="pathline">
     <span>{$t("installedAt")}</span>
     <b>{installPath}</b>
+    {#if installPath}
+      <button class="copy" onclick={() => copyPath(installPath)}>
+        <svg viewBox="0 0 24 24"
+          ><path
+            d="M16 1H4a2 2 0 00-2 2v14h2V3h12zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11z"
+          /></svg
+        ><span>{$t("copyBtn")}</span>
+      </button>
+    {/if}
   </div>
 
   <div class="toolbar">
@@ -251,6 +375,19 @@
       <span>{$t("refreshBtn")}</span>
     </button>
     <button class="btn ghost" onclick={clearAutoLogin}>{$t("clearLogin")}</button>
+    <span class="seg" role="group" aria-label="View">
+      <button class:active={view === "list"} onclick={() => setView("list")}
+        >☰ <span>{$t("viewList")}</span></button
+      >
+      <button class:active={view === "card"} onclick={() => setView("card")}
+        >▦ <span>{$t("viewCards")}</span></button
+      >
+    </span>
+    <button
+      class="btn"
+      class:sel-active={selMode}
+      onclick={() => setSelMode(!selMode)}>{$t("select")}</button
+    >
     {#if hidden.length}
       <button class="link" onclick={clearHidden}
         >{fmt($t("showHidden"), { n: hidden.length })}</button
@@ -263,44 +400,100 @@
     </label>
   </div>
 
-  <div class="list">
-    {#each entries as entry (("folder" in entry ? "f:" + entry.folder : "s:" + entry.single.accountName))}
-      {#if "single" in entry}
-        {@render steamRow(entry.single, false)}
-      {:else}
-        {@const open = openFolders.has(entry.folder)}
-        <div
-          class="row folder"
-          title={$t("folderTitle")}
-          role="button"
-          tabindex="0"
-          onclick={() => toggleFolder(entry.folder)}
-          onkeydown={(e) =>
-            (e.key === "Enter" || e.key === " ") &&
-            (e.preventDefault(), toggleFolder(entry.folder))}
-        >
-          <span class="chev">{open ? "▼" : "▶"}</span>
-          <div class="av stack">{initial(entry.folder)}</div>
-          <div class="who">
-            <div class="acct">{entry.folder}</div>
-            <div class="persona">
+  {#if selMode}
+    <div class="batchbar">
+      <b>{fmt($t("selCount"), { n: selected.size })}</b>
+      <button class="btn ghost" onclick={selectAll}>{$t("selAll")}</button>
+      <button class="btn ghost" onclick={clearSel}>{$t("selNone")}</button>
+      <span class="spacer"></span>
+      <button
+        class="btn danger"
+        disabled={selected.size === 0}
+        onclick={openSDeleteBatch}>{$t("delBtn")}</button
+      >
+      <button class="btn" onclick={() => setSelMode(false)}>{$t("cancel")}</button>
+    </div>
+  {/if}
+
+  {#if view === "card"}
+    <div class="grid">
+      {#each entries as entry (("folder" in entry ? "f:" + entry.folder : "s:" + entry.single.accountName))}
+        {#if "single" in entry}
+          {@render steamCard(entry.single, false)}
+        {:else}
+          {@const open = openFolders.has(entry.folder)}
+          <div
+            class="card folder-card"
+            title={$t("folderTitle")}
+            role="button"
+            tabindex="0"
+            onclick={() => toggleFolder(entry.folder)}
+            onkeydown={(e) =>
+              (e.key === "Enter" || e.key === " ") &&
+              (e.preventDefault(), toggleFolder(entry.folder))}
+          >
+            <div
+              class="cav"
+              style="background:linear-gradient(135deg,var(--violet),var(--blue))"
+            >
+              {initial(entry.folder)}
+            </div>
+            <div class="cname">
+              {open ? "▾" : "▸"}
+              {entry.folder}
+            </div>
+            <div class="csub">
               {fmt($t("folderCount"), { n: entry.items.length })}
             </div>
           </div>
-          <div class="end">
-            <span class="pill folder"
-              >{fmt($t("folderCount"), { n: entry.items.length })}</span
-            >
-          </div>
-        </div>
-        {#if open}
-          {#each entry.items as a (a.accountName)}
-            {@render steamRow(a, true)}
-          {/each}
+          {#if open}
+            {#each entry.items as a (a.accountName)}
+              {@render steamCard(a, true)}
+            {/each}
+          {/if}
         {/if}
-      {/if}
-    {/each}
-  </div>
+      {/each}
+    </div>
+  {:else}
+    <div class="list">
+      {#each entries as entry (("folder" in entry ? "f:" + entry.folder : "s:" + entry.single.accountName))}
+        {#if "single" in entry}
+          {@render steamRow(entry.single, false)}
+        {:else}
+          {@const open = openFolders.has(entry.folder)}
+          <div
+            class="row folder"
+            title={$t("folderTitle")}
+            role="button"
+            tabindex="0"
+            onclick={() => toggleFolder(entry.folder)}
+            onkeydown={(e) =>
+              (e.key === "Enter" || e.key === " ") &&
+              (e.preventDefault(), toggleFolder(entry.folder))}
+          >
+            <span class="chev">{open ? "▼" : "▶"}</span>
+            <div class="av stack">{initial(entry.folder)}</div>
+            <div class="who">
+              <div class="acct">{entry.folder}</div>
+              <div class="persona">
+                {fmt($t("folderCount"), { n: entry.items.length })}
+              </div>
+            </div>
+            <div class="end">
+              <span class="pill folder"
+                >{fmt($t("folderCount"), { n: entry.items.length })}</span
+              >
+            </div>
+          </div>
+          {#if open}
+            {#each entry.items as a (a.accountName)}
+              {@render steamRow(a, true)}
+            {/each}
+          {/if}
+        {/if}
+      {/each}
+    </div>
+  {/if}
 
   <div class="legend">
     <span><i style="background:var(--green)"></i> <span>{$t("legendActive")}</span></span>
@@ -310,17 +503,28 @@
 
 {#snippet steamRow(a: SteamAccount, child: boolean)}
   {@const uri = $avatars[a.steamId64]}
+  {@const picked = selected.has(a.accountName)}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="row"
     class:is-active={a.mostRecent}
     class:child
-    class:can-switch={!a.mostRecent}
-    title={a.mostRecent ? undefined : $t("rowTitle")}
-    role={a.mostRecent ? undefined : "button"}
-    tabindex={a.mostRecent ? undefined : 0}
+    class:can-switch={!a.mostRecent && !selMode}
+    class:selectable={selMode}
+    class:selected={selMode && picked}
+    title={selMode ? undefined : a.mostRecent ? undefined : $t("rowTitle")}
+    role={selMode ? "button" : a.mostRecent ? undefined : "button"}
+    tabindex={selMode ? 0 : a.mostRecent ? undefined : 0}
+    onclick={() => selMode && toggleSel(a.accountName)}
+    onkeydown={(e) =>
+      selMode &&
+      (e.key === "Enter" || e.key === " ") &&
+      (e.preventDefault(), toggleSel(a.accountName))}
     ondblclick={() => switchTo(a)}
   >
+    {#if selMode}
+      <span class="selbox">✓</span>
+    {/if}
     <div class="av" style="background:{hue(a.accountName)}">
       {#if uri}
         <img src={uri} alt="" />
@@ -338,48 +542,115 @@
       {:else}
         <span class="pill muted">{$t("dblPill")}</span>
       {/if}
-      <button
-        class="btn danger-line"
-        onclick={(e) => {
-          e.stopPropagation();
-          openSDelete(a);
-        }}>{$t("delBtn")}</button
-      >
+      {#if !selMode}
+        <button
+          class="btn danger-line"
+          onclick={(e) => {
+            e.stopPropagation();
+            openSDelete(a);
+          }}>{$t("delBtn")}</button
+        >
+      {/if}
     </div>
   </div>
 {/snippet}
 
-{#if sdelAccount}
-  {@const a = sdelAccount}
+{#snippet steamCard(a: SteamAccount, child: boolean)}
+  {@const uri = $avatars[a.steamId64]}
+  {@const picked = selected.has(a.accountName)}
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div
+    class="card"
+    class:is-active={a.mostRecent}
+    class:child-card={child}
+    class:can-switch={!a.mostRecent && !selMode}
+    class:selectable={selMode}
+    class:selected={selMode && picked}
+    title={selMode ? undefined : a.mostRecent ? undefined : $t("rowTitle")}
+    role={selMode || !a.mostRecent ? "button" : undefined}
+    tabindex={selMode || !a.mostRecent ? 0 : undefined}
+    onclick={() => selMode && toggleSel(a.accountName)}
+    onkeydown={(e) =>
+      selMode &&
+      (e.key === "Enter" || e.key === " ") &&
+      (e.preventDefault(), toggleSel(a.accountName))}
+    ondblclick={() => switchTo(a)}
+  >
+    {#if selMode}
+      <span class="selbox">✓</span>
+    {:else}
+      <button
+        class="more"
+        title={$t("delBtn")}
+        onclick={(e) => {
+          e.stopPropagation();
+          openSDelete(a);
+        }}>⋯</button
+      >
+    {/if}
+    <div class="cav" style="background:{hue(a.accountName)}">
+      {#if uri}
+        <img src={uri} alt="" />
+      {/if}
+      {initial(a.personaName)}
+    </div>
+    <div class="cname">{a.personaName}</div>
+    <div class="csub">{a.accountName}</div>
+    {#if a.mostRecent}
+      <span class="pill active">{$t("activePill")}</span>
+    {/if}
+  </div>
+{/snippet}
+
+{#if sdelAccount || sdelBatch}
   <div
     class="overlay"
     role="presentation"
     onclick={(e) => e.target === e.currentTarget && closeSDelete()}
   >
     <div class="modal" role="dialog" aria-modal="true">
-      <h3>
-        {fmt($t("sdelTitle"), {
-          a: a.personaName || a.accountName,
-          p:
-            $lang === "en"
-              ? ` (${a.accountName})`
-              : `（${a.accountName}）`,
-        })}
-      </h3>
-      <label class="opt">
-        <input type="radio" name="sdel-mode" value="hide" bind:group={sdelMode} />
-        <span>
-          <div class="ot">{$t("sdelHideT")}</div>
-          <div class="od">{$t("sdelHideD")}</div>
-        </span>
-      </label>
-      <label class="opt danger">
-        <input type="radio" name="sdel-mode" value="forget" bind:group={sdelMode} />
-        <span>
-          <div class="ot">{$t("sdelForgetT")}</div>
-          <div class="od">{fmt($t("sdelForgetD"), { a: a.accountName })}</div>
-        </span>
-      </label>
+      {#if sdelBatch}
+        <h3>{fmt($t("sdelTitleN"), { n: sdelBatch.length })}</h3>
+        <label class="opt">
+          <input type="radio" name="sdel-mode" value="hide" bind:group={sdelMode} />
+          <span>
+            <div class="ot">{$t("sdelHideT")}</div>
+            <div class="od">{$t("sdelHideD")}</div>
+          </span>
+        </label>
+        <label class="opt danger">
+          <input type="radio" name="sdel-mode" value="forget" bind:group={sdelMode} />
+          <span>
+            <div class="ot">{$t("sdelForgetT")}</div>
+            <div class="od">{$t("sdelForgetDN")}</div>
+          </span>
+        </label>
+      {:else if sdelAccount}
+        {@const a = sdelAccount}
+        <h3>
+          {fmt($t("sdelTitle"), {
+            a: a.personaName || a.accountName,
+            p:
+              $lang === "en"
+                ? ` (${a.accountName})`
+                : `（${a.accountName}）`,
+          })}
+        </h3>
+        <label class="opt">
+          <input type="radio" name="sdel-mode" value="hide" bind:group={sdelMode} />
+          <span>
+            <div class="ot">{$t("sdelHideT")}</div>
+            <div class="od">{$t("sdelHideD")}</div>
+          </span>
+        </label>
+        <label class="opt danger">
+          <input type="radio" name="sdel-mode" value="forget" bind:group={sdelMode} />
+          <span>
+            <div class="ot">{$t("sdelForgetT")}</div>
+            <div class="od">{fmt($t("sdelForgetD"), { a: a.accountName })}</div>
+          </span>
+        </label>
+      {/if}
       <div class="actions">
         <span class="spacer"></span>
         <button class="btn" onclick={closeSDelete}>{$t("cancel")}</button>

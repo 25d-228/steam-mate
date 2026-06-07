@@ -1,14 +1,63 @@
 <script lang="ts">
   import "../app.css";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { page } from "$app/state";
   import { listSupportedGames } from "$lib/api/steam";
   import type { GameInfo } from "$lib/api/types";
-  import { lang, setLang, t, type Lang } from "$lib/i18n";
+  import { lang, setLang, t, tNow, type Lang } from "$lib/i18n";
   import { toastError } from "$lib/errors";
+  import { avatars, fetchAvatar } from "$lib/stores/avatars";
+  import { steamAccounts, ensureSteamAccounts, refreshSteamAccounts } from "$lib/stores/steam";
   import Toast from "$lib/components/Toast.svelte";
 
   let { children } = $props();
+
+  // ---- signed-in chip (sidebar) ----
+  const AV_COLORS = [
+    "#268bd2",
+    "#2aa198",
+    "#6c71c4",
+    "#b58900",
+    "#d33682",
+    "#cb4b16",
+  ];
+  function initial(s: string): string {
+    return (s.trim()[0] || "?").toUpperCase();
+  }
+  function hue(s: string): string {
+    let h = 0;
+    for (const c of s) h = (h * 31 + (c.codePointAt(0) ?? 0)) % AV_COLORS.length;
+    return AV_COLORS[h];
+  }
+
+  // The signed-in account is the one Steam marks MostRecent.
+  const current = $derived($steamAccounts.find((a) => a.mostRecent) ?? null);
+
+  // Fetch its avatar as soon as we know who is signed in.
+  $effect(() => {
+    if (current) fetchAvatar(current.steamId64);
+  });
+
+  // ---- tray refresh ----
+  // The backend owns the real Windows tray; we feed it the localized labels and
+  // the current persona. Re-run on mount and whenever the language or the
+  // signed-in account changes (camelCase args map to the Rust snake_case ones).
+  $effect(() => {
+    // read reactive deps so the effect re-runs on change
+    const l = $lang;
+    const persona = current?.personaName;
+    void l;
+    const dash = "—";
+    invoke("tray_refresh", {
+      signedInText: `${tNow("signedInAs")} ${persona || dash}`,
+      openLabel: tNow("trayOpen"),
+      exitLabel: tNow("trayExit"),
+    }).catch(() => {
+      /* tray is best-effort; ignore when unavailable */
+    });
+  });
 
   type Palette = "solarized" | "steam" | "forest" | "iris";
   type Theme = "auto" | "light" | "dark";
@@ -53,6 +102,9 @@
     return page.url.pathname.startsWith(gamePath(g));
   }
 
+  let unlisten: UnlistenFn | undefined;
+  let unlistenErr: UnlistenFn | undefined;
+
   onMount(() => {
     const storedTheme = localStorage.getItem("sm-theme") as Theme | null;
     const storedPalette = localStorage.getItem("sm-palette") as Palette | null;
@@ -67,6 +119,41 @@
         toastError(e);
       }
     })();
+
+    // Populate the signed-in chip even before the Steam page is visited.
+    ensureSteamAccounts();
+
+    // The backend emits "accounts-changed" after a tray quick-switch (and any
+    // other out-of-band change); refresh the shared store so the chip, tray
+    // text, and Steam page all react.
+    listen("accounts-changed", () => {
+      refreshSteamAccounts().catch(() => {
+        /* best-effort */
+      });
+    })
+      .then((un) => {
+        unlisten = un;
+      })
+      .catch(() => {
+        /* event API unavailable; ignore */
+      });
+
+    // A tray-initiated switch that fails has no page to report to — surface
+    // it through the global toast so the click isn't silently swallowed.
+    listen<string>("switch-error", (e) => {
+      toastError(e.payload);
+    })
+      .then((un) => {
+        unlistenErr = un;
+      })
+      .catch(() => {
+        /* event API unavailable; ignore */
+      });
+  });
+
+  onDestroy(() => {
+    unlisten?.();
+    unlistenErr?.();
   });
 </script>
 
@@ -82,8 +169,26 @@
       </span>
       <div>
         <div class="name">steam-mate</div>
-        <div class="ver">v0.1.0</div>
+        <div class="ver">v0.2.0</div>
       </div>
+    </div>
+
+    <div class="me" title={current?.accountName ?? ""}>
+      <span
+        class="me-av"
+        style="background:{current ? hue(current.accountName) : 'var(--border)'}"
+      >
+        {#if current}
+          {#if $avatars[current.steamId64]}
+            <img src={$avatars[current.steamId64]} alt="" />
+          {/if}
+          {initial(current.personaName)}
+        {/if}
+      </span>
+      <span class="me-text">
+        <span class="me-label">{$t("signedInAs")}</span>
+        <b>{current ? current.personaName : "—"}</b>
+      </span>
     </div>
 
     <a class="nav-item" class:active={isSteam} href="/steam">

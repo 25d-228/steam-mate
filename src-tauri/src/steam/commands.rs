@@ -69,6 +69,21 @@ pub async fn steam_forget_account(account_name: String) -> AppResult<()> {
         .map_err(|e| AppError::Io(e.to_string()))?
 }
 
+/// Forget several remembered Steam accounts in one pass, returning the count
+/// actually removed.
+///
+/// Runs the blocking [`switch::forget_accounts`] on a blocking thread: Steam is
+/// stopped once, `loginusers.vdf` is read once, each name is dropped from the
+/// in-memory text (unknown names skipped), the file is written once, and the
+/// auto-login registry keys are cleared if the removed set included the active
+/// user. A join failure maps to [`AppError::Io`].
+#[tauri::command]
+pub async fn steam_forget_accounts(account_names: Vec<String>) -> AppResult<u32> {
+    tauri::async_runtime::spawn_blocking(move || switch::forget_accounts(&account_names))
+        .await
+        .map_err(|e| AppError::Io(e.to_string()))?
+}
+
 /// Return a Steam account's avatar as a `data:image/jpeg;base64,...` URI, or
 /// `None` if unavailable.
 ///

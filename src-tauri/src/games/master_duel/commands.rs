@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use crate::error::{AppError, AppResult};
-use crate::games::master_duel::account::MdAccount;
+use crate::games::master_duel::account::{MdAccount, SeedCandidate};
 use crate::games::master_duel::{csv, link, paths};
 
 /// Build the `MdAccount` list for the current install (blocking).
@@ -43,11 +43,15 @@ fn list_accounts_blocking() -> AppResult<Vec<MdAccount>> {
             // is locked) must not abort the whole listing — degrade that one
             // row to "not linked" rather than failing every account.
             let is_linked = link::is_linked(&entry.path().join("0000")).unwrap_or(false);
+            // Only probe for files when not linked — walking through a
+            // junction would count the shared cache's files as the profile's.
+            let has_files = !is_linked && link::has_files(&entry.path().join("0000"));
             accounts.push(MdAccount {
                 folder_id,
                 account_name,
                 steam_login,
                 is_linked,
+                has_files,
             });
         }
     }
@@ -224,6 +228,45 @@ pub async fn md_delete_account(folder_id: String) -> AppResult<()> {
     .map_err(|e| AppError::Io(e.to_string()))?
 }
 
+/// Permanently delete several accounts in one pass — the batch behind the
+/// UI's multi-select.
+///
+/// One up-front running check and one install resolve for the whole batch
+/// (the same trade [`md_link_all`] makes), then the exact per-account flow of
+/// [`md_delete_account`]. A profile that fails (locked folder, already gone)
+/// is skipped and reported in `failed` rather than aborting the rest — a
+/// batch must never strand itself half-done over one bad folder. Returns
+/// `{ "deleted": n, "failed": [folder_id, ...] }`.
+#[tauri::command]
+pub async fn md_delete_accounts(folder_ids: Vec<String>) -> AppResult<serde_json::Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        // Single up-front running check — never re-checked per account.
+        if link::is_running() {
+            return Err(AppError::GameRunning("master_duel"));
+        }
+        let install = paths::find_install()?;
+        let local_data = paths::local_data(&install);
+        let local_save = paths::local_save(&install);
+        let csv_path = paths::accounts_csv(&install);
+
+        let mut deleted = 0u32;
+        let mut failed: Vec<String> = Vec::new();
+        for folder_id in &folder_ids {
+            // running = false: verified once above (matching md_link_all); a
+            // per-iteration re-probe would still race a mid-loop launch.
+            let result = link::delete_account(&local_data, &local_save, folder_id, false)
+                .and_then(|()| csv::remove_account(&csv_path, folder_id));
+            match result {
+                Ok(()) => deleted += 1,
+                Err(_) => failed.push(folder_id.clone()),
+            }
+        }
+        Ok(serde_json::json!({ "deleted": deleted, "failed": failed }))
+    })
+    .await
+    .map_err(|e| AppError::Io(e.to_string()))?
+}
+
 /// Whether `masterduel.exe` is currently running.
 #[tauri::command]
 pub async fn md_is_running() -> AppResult<bool> {
@@ -278,6 +321,109 @@ pub async fn md_cache_size() -> AppResult<u64> {
     tauri::async_runtime::spawn_blocking(|| {
         let install = paths::find_install()?;
         Ok(link::cache_size(&paths::shared_cache(&install)))
+    })
+    .await
+    .map_err(|e| AppError::Io(e.to_string()))?
+}
+
+/// Whether the shared cache directory (`LocalData\DATA\0000`) exists.
+///
+/// Drives the Master Duel page's empty-state: `false` shows the "No shared
+/// cache yet" box with the create flow, `true` shows the normal cache box.
+#[tauri::command]
+pub async fn md_cache_exists() -> AppResult<bool> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let install = paths::find_install()?;
+        Ok(paths::shared_cache(&install).exists())
+    })
+    .await
+    .map_err(|e| AppError::Io(e.to_string()))?
+}
+
+/// List profiles that could seed a brand-new shared cache, largest first.
+///
+/// A candidate is a profile whose own `0000` is a REAL directory (not a
+/// junction — already-linked profiles point at a cache, so there's nothing to
+/// move) that holds at least one file (empty folders carry no cache to seed
+/// from). Each candidate's `account_name` comes from `accounts.csv` (empty when
+/// unlabeled) and its `size_bytes` is the `0000` folder's total file size (via
+/// the same walk as [`link::cache_size`]). Sorted by `size_bytes` descending so
+/// the most complete cache is offered first. The shared `DATA` folder is never
+/// a candidate.
+#[tauri::command]
+pub async fn md_seed_candidates() -> AppResult<Vec<SeedCandidate>> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let install = paths::find_install()?;
+        let names = csv::read_accounts(&paths::accounts_csv(&install))?;
+        // link::seed_candidates does the junction/size scan (already sorted
+        // largest-first); we only join each id to its CSV label here.
+        let candidates = link::seed_candidates(&paths::local_data(&install))?
+            .into_iter()
+            .map(|(folder_id, size_bytes)| {
+                let account_name = names
+                    .iter()
+                    .find(|(id, _, _)| id == &folder_id)
+                    .map(|(_, n, _)| n.clone())
+                    .unwrap_or_default();
+                SeedCandidate {
+                    folder_id,
+                    account_name,
+                    size_bytes,
+                }
+            })
+            .collect();
+        Ok(candidates)
+    })
+    .await
+    .map_err(|e| AppError::Io(e.to_string()))?
+}
+
+/// Create the shared cache, optionally seeding it from an existing profile.
+///
+/// `seed = Some(folder_id)`: that profile's own `0000` is *moved* (instant
+/// same-volume rename, nothing copied) into `LocalData\DATA\0000` and a junction
+/// is created back in its place — the profile becomes the first linked account.
+/// `seed = None`: an empty skeleton (root + 256 hash folders) is laid down; the
+/// game downloads the cache into it once on its next launch. Refuses while the
+/// game is running and refuses if `DATA\0000` already exists — both enforced in
+/// [`link::create_cache`].
+#[tauri::command]
+pub async fn md_create_cache(seed: Option<String>) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let install = paths::find_install()?;
+        let shared = paths::shared_cache(&install);
+        let running = link::is_running();
+        match seed {
+            Some(folder_id) => {
+                let seed_0000 = paths::local_data(&install).join(&folder_id).join("0000");
+                link::create_cache(&shared, Some(&seed_0000), running)
+            }
+            None => link::create_cache(&shared, None, running),
+        }
+    })
+    .await
+    .map_err(|e| AppError::Io(e.to_string()))?
+}
+
+/// Open File Explorer at the shared cache path (`LocalData\DATA\0000`).
+///
+/// Errors with [`AppError::GameNotInstalled`] if the cache path is missing
+/// (nothing to reveal). Launches `explorer.exe <path>` and returns immediately;
+/// a spawn failure maps to [`AppError::Io`]. No extra plugin/permission needed —
+/// `explorer` is invoked directly.
+#[tauri::command]
+pub async fn md_reveal_cache() -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let install = paths::find_install()?;
+        let shared = paths::shared_cache(&install);
+        if !shared.exists() {
+            return Err(AppError::GameNotInstalled("master_duel"));
+        }
+        std::process::Command::new("explorer")
+            .arg(&shared)
+            .spawn()
+            .map_err(|e| AppError::Io(e.to_string()))?;
+        Ok(())
     })
     .await
     .map_err(|e| AppError::Io(e.to_string()))?

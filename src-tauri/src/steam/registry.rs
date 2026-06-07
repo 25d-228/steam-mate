@@ -2,13 +2,33 @@
 //! NOTE: this is NOT the Windows registry concept generically — it's that
 //! specific subkey. Windows-only (uses `winreg`).
 
-use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
+use winreg::enums::{HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE};
 use winreg::RegKey;
 
 use crate::error::{AppError, AppResult};
 
 /// The Steam user-registry subkey path under HKCU.
 const STEAM_REG_PATH: &str = r"Software\Valve\Steam";
+
+/// Read the currently-remembered auto-login user, if any.
+///
+/// Reads `HKCU\Software\Valve\Steam\AutoLoginUser`. A missing key/value or a
+/// blank value yields `Ok(None)` (Steam writes an empty string when no user is
+/// remembered); only a genuine open/query failure other than "not found" would
+/// surface — and even those degrade to `None` here, since callers use this for a
+/// best-effort "is this account the active one?" check, never as a hard error.
+pub fn get_auto_login_user() -> Option<String> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let key = hkcu
+        .open_subkey_with_flags(STEAM_REG_PATH, KEY_QUERY_VALUE)
+        .ok()?;
+    let value: String = key.get_value("AutoLoginUser").ok()?;
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
 
 /// Remember `account_name` as the auto-login user so Steam signs straight in
 /// on its next launch.
