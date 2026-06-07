@@ -18,7 +18,10 @@ const inFlight = new Set<string>();
 export async function fetchAvatar(steamId64: string): Promise<void> {
   if (!steamId64) return;
   const cache = get(avatars);
-  if (steamId64 in cache || inFlight.has(steamId64)) return;
+  // A null entry means "failed or none last time" — retry it on the next ask
+  // (a transient network failure must not blank an avatar until app restart).
+  // Only a fetched URI is final.
+  if (cache[steamId64] || inFlight.has(steamId64)) return;
   inFlight.add(steamId64);
   try {
     const uri = await getAvatar(steamId64);

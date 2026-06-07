@@ -190,6 +190,126 @@
   --accent-2: #c573d8;
 }
 
+/* Nord — Snow Storm light, Polar Night dark */
+:root[data-palette="nord"] {
+  --bg: #c5cedd;
+  --win: #eceff4;
+  --surface: #e5e9f0;
+  --surface-2: #dfe5ef;
+  --fg: #4c566a;
+  --emph: #2e3440;
+  --muted: #94a0b3;
+  --border: #d4dbe7;
+  --accent: #5e81ac;
+  --accent-2: #88c0d0;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="nord"]:not([data-theme="light"]) {
+    --bg: #22262f;
+    --win: #2e3440;
+    --surface: #3b4252;
+    --surface-2: #434c5e;
+    --fg: #d8dee9;
+    --emph: #eceff4;
+    --muted: #7b88a1;
+    --border: #4c566a;
+    --accent: #88c0d0;
+    --accent-2: #81a1c1;
+  }
+}
+:root[data-palette="nord"][data-theme="dark"] {
+  --bg: #22262f;
+  --win: #2e3440;
+  --surface: #3b4252;
+  --surface-2: #434c5e;
+  --fg: #d8dee9;
+  --emph: #eceff4;
+  --muted: #7b88a1;
+  --border: #4c566a;
+  --accent: #88c0d0;
+  --accent-2: #81a1c1;
+}
+
+/* Gruvbox — warm paper light, deep umber dark, orange accent */
+:root[data-palette="gruvbox"] {
+  --bg: #d2c6a6;
+  --win: #fbf1c7;
+  --surface: #f2e5bc;
+  --surface-2: #ebdbb2;
+  --fg: #504945;
+  --emph: #3c3836;
+  --muted: #928374;
+  --border: #d5c4a1;
+  --accent: #d65d0e;
+  --accent-2: #b57614;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="gruvbox"]:not([data-theme="light"]) {
+    --bg: #1d2021;
+    --win: #282828;
+    --surface: #32302f;
+    --surface-2: #3c3836;
+    --fg: #d5c4a1;
+    --emph: #ebdbb2;
+    --muted: #928374;
+    --border: #504945;
+    --accent: #fe8019;
+    --accent-2: #fabd2f;
+  }
+}
+:root[data-palette="gruvbox"][data-theme="dark"] {
+  --bg: #1d2021;
+  --win: #282828;
+  --surface: #32302f;
+  --surface-2: #3c3836;
+  --fg: #d5c4a1;
+  --emph: #ebdbb2;
+  --muted: #928374;
+  --border: #504945;
+  --accent: #fe8019;
+  --accent-2: #fabd2f;
+}
+
+/* Rosé Pine — Dawn light, Main dark */
+:root[data-palette="rosepine"] {
+  --bg: #e4d9cd;
+  --win: #faf4ed;
+  --surface: #f2e9e1;
+  --surface-2: #f7f0e8;
+  --fg: #575279;
+  --emph: #3f3a5a;
+  --muted: #9893a5;
+  --border: #e5dcd2;
+  --accent: #b4637a;
+  --accent-2: #d7827e;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="rosepine"]:not([data-theme="light"]) {
+    --bg: #13111e;
+    --win: #191724;
+    --surface: #1f1d2e;
+    --surface-2: #26233a;
+    --fg: #e0def4;
+    --emph: #f1eefe;
+    --muted: #6e6a86;
+    --border: #393552;
+    --accent: #eb6f92;
+    --accent-2: #c4a7e7;
+  }
+}
+:root[data-palette="rosepine"][data-theme="dark"] {
+  --bg: #13111e;
+  --win: #191724;
+  --surface: #1f1d2e;
+  --surface-2: #26233a;
+  --fg: #e0def4;
+  --emph: #f1eefe;
+  --muted: #6e6a86;
+  --border: #393552;
+  --accent: #eb6f92;
+  --accent-2: #c4a7e7;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -227,6 +347,24 @@ body {
   height: 100vh;
   display: flex;
   min-height: 0;
+  animation: win-in 0.45s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+
+/* ---------- app open animation ---------- */
+@keyframes win-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.965);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app {
+    animation: none;
+  }
 }
 
 /* ---------- sidebar nav ---------- */
@@ -1284,18 +1422,22 @@ h2.page-title .count {
   gap: 8px;
   margin-top: 2px;
 }
+/* Folder + member cards share the folder's color (--fc, set per group from
+   the folder name) as a background wash, so an expanded group reads as one
+   unit inside the grid. Mixing against --win keeps it right in dark mode. */
 .card.folder-card {
-  background: var(--surface-2);
-  border-color: rgba(108, 113, 196, 0.4);
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
+  background: color-mix(in srgb, var(--fc, var(--violet)) 16%, var(--win));
+  border-color: color-mix(in srgb, var(--fc, var(--violet)) 40%, transparent);
   box-shadow:
-    3px 3px 0 0 rgba(108, 113, 196, 0.18),
-    6px 6px 0 0 rgba(108, 113, 196, 0.08);
+    3px 3px 0 0 color-mix(in srgb, var(--fc, var(--violet)) 18%, transparent),
+    6px 6px 0 0 color-mix(in srgb, var(--fc, var(--violet)) 8%, transparent);
 }
 .card.child-card {
-  border-color: rgba(108, 113, 196, 0.35);
+  background: color-mix(in srgb, var(--fc, var(--violet)) 10%, var(--win));
+  border-color: color-mix(in srgb, var(--fc, var(--violet)) 30%, transparent);
 }
 
 /* ---------- batch selection ---------- */

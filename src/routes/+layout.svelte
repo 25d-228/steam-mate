@@ -1,12 +1,12 @@
 <script lang="ts">
   import "../app.css";
   import { onMount, onDestroy } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { page } from "$app/state";
   import { listSupportedGames } from "$lib/api/steam";
   import type { GameInfo } from "$lib/api/types";
-  import { lang, setLang, t, tNow, type Lang } from "$lib/i18n";
+  import { lang, setLang, t, type Lang } from "$lib/i18n";
+  import { hue, initial } from "$lib/avatar";
   import { toastError } from "$lib/errors";
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
   import {
@@ -20,23 +20,6 @@
 
   let { children } = $props();
 
-  // ---- signed-in chip (sidebar) ----
-  const AV_COLORS = [
-    "#268bd2",
-    "#2aa198",
-    "#6c71c4",
-    "#b58900",
-    "#d33682",
-    "#cb4b16",
-  ];
-  function initial(s: string): string {
-    return (s.trim()[0] || "?").toUpperCase();
-  }
-  function hue(s: string): string {
-    let h = 0;
-    for (const c of s) h = (h * 31 + (c.codePointAt(0) ?? 0)) % AV_COLORS.length;
-    return AV_COLORS[h];
-  }
 
   // MostRecent names the auto-login target; it is "signed in" only while a
   // Steam process actually exists. With Steam closed the chip and tray must
@@ -49,30 +32,14 @@
     if (current) fetchAvatar(current.steamId64);
   });
 
-  // ---- tray refresh ----
-  // The backend owns the real Windows tray AND derives the header + signed-in
-  // dot itself from live state — we only supply localized label pieces. The
-  // reactive reads are rebuild triggers: language change re-localizes, and a
-  // steamRunning or active-account flip prompts the backend to re-derive
-  // (camelCase args map to the Rust snake_case ones).
-  $effect(() => {
-    const l = $lang;
-    const running = $steamRunning;
-    const persona = current?.personaName;
-    void l;
-    void running;
-    void persona;
-    invoke("tray_refresh", {
-      signedInLabel: tNow("signedInAs"),
-      steamOffLabel: tNow("steamOff"),
-      openLabel: tNow("trayOpen"),
-      exitLabel: tNow("trayExit"),
-    }).catch(() => {
-      /* tray is best-effort; ignore when unavailable */
-    });
-  });
-
-  type Palette = "solarized" | "steam" | "forest" | "iris";
+  type Palette =
+    | "solarized"
+    | "steam"
+    | "forest"
+    | "iris"
+    | "nord"
+    | "gruvbox"
+    | "rosepine";
   type Theme = "auto" | "light" | "dark";
 
   let palette = $state<Palette>("steam");
@@ -85,6 +52,11 @@
   };
 
   const isSteam = $derived(page.url.pathname.startsWith("/steam"));
+
+  // The root layout wraps every route, including the frameless tray popup at
+  // /tray. That window renders its own chrome and runs its own wiring, so the
+  // layout must contribute nothing but the children there.
+  const isTray = $derived(page.url.pathname.startsWith("/tray"));
 
   function applyAppearance() {
     const root = document.documentElement;
@@ -135,6 +107,11 @@
     if (storedTheme) theme = storedTheme;
     if (storedPalette) palette = storedPalette;
     applyAppearance();
+
+    // The tray popup wants the same palette but none of the chrome wiring
+    // below (probe interval, focus/event listeners, account preload) — it does
+    // its own. Bail out once appearance is applied.
+    if (isTray) return;
 
     (async () => {
       try {
@@ -193,8 +170,11 @@
   });
 </script>
 
-<div class="app">
-  <aside class="nav">
+{#if isTray}
+  {@render children?.()}
+{:else}
+  <div class="app">
+    <aside class="nav">
     <div class="brand">
       <span class="logo">
         <svg viewBox="0 0 24 24"
@@ -205,29 +185,32 @@
       </span>
       <div>
         <div class="name">steam-mate</div>
-        <div class="ver">v0.2.2</div>
+        <div class="ver">v0.2.3</div>
       </div>
     </div>
 
-    <div class="me" title={signedIn?.accountName ?? ""}>
-      <span
-        class="me-av"
-        style="background:{signedIn ? hue(signedIn.accountName) : 'var(--border)'}"
-      >
-        {#if signedIn}
-          {#if $avatars[signedIn.steamId64]}
-            <img src={$avatars[signedIn.steamId64]} alt="" />
-          {/if}
-          {initial(signedIn.personaName)}
-        {/if}
-      </span>
-      <span class="me-text">
-        <span class="me-label"
-          >{$steamRunning ? $t("signedInAs") : $t("steamOff")}</span
+    {#if $steamRunning}
+      <div class="me" title={signedIn?.accountName ?? ""}>
+        <span
+          class="me-av"
+          style="background:{signedIn
+            ? hue(signedIn.accountName)
+            : 'var(--border)'}"
         >
-        <b>{signedIn ? signedIn.personaName : "—"}</b>
-      </span>
-    </div>
+          {#if signedIn}
+            {#if $avatars[signedIn.steamId64]}
+              <img src={$avatars[signedIn.steamId64]} alt="" />
+            {/if}
+            {initial(signedIn.personaName)}
+          {/if}
+        </span>
+        <span class="me-text">
+          <span class="me-label">{$t("signedInAs")}</span>
+          <!-- em-dash only for the running-but-no-mostRecent edge -->
+          <b>{signedIn ? signedIn.personaName : "—"}</b>
+        </span>
+      </div>
+    {/if}
 
     <a class="nav-item" class:active={isSteam} href="/steam">
       <span class="ico">
@@ -271,6 +254,9 @@
         <option value="solarized">Solarized</option>
         <option value="forest">Forest</option>
         <option value="iris">Iris</option>
+        <option value="nord">Nord</option>
+        <option value="gruvbox">Gruvbox</option>
+        <option value="rosepine">Rosé Pine</option>
       </select>
     </div>
     <div class="lang-row">
@@ -311,6 +297,7 @@
   <main class="main">
     {@render children?.()}
   </main>
-</div>
+  </div>
 
-<Toast />
+  <Toast />
+{/if}

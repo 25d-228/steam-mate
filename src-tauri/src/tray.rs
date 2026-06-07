@@ -1,130 +1,30 @@
-//! Windows system tray — quick-switch menu mirroring the in-app account list.
+//! Windows system tray — icon only; the menu is a rich webview popup.
 //!
 //! Windows-only (gated at the crate root like the [`crate::steam`] module): the
-//! tray drives the same `steam::switch` flow, which touches the Windows registry
-//! and `Steam.exe`. The tray icon stays resident while the window is hidden, so
-//! closing the window hides it here rather than quitting — only the tray's
-//! "Exit" item quits the app.
+//! tray icon stays resident while the main window is hidden, so closing the
+//! window hides it here rather than quitting — only the popup's "Exit" item
+//! (which invokes [`app_exit`]) quits the app.
 //!
-//! The menu is rebuilt on demand: at setup we lay it down once with English
-//! defaults, and the frontend calls [`tray_refresh`] on mount (and the menu-
-//! event handler re-calls it after a switch) with already-localized labels. The
-//! [`TrayIcon`] handle plus the last-used labels live in [`TrayState`] (a
-//! `Mutex` in managed state) so any of those paths can rebuild it.
+//! There is no native menu. Right-clicking the tray icon positions and shows a
+//! borderless always-on-top "tray" webview window that renders the colorful
+//! account list (avatars, the signed-in dot, Open/Exit) itself; left-clicking
+//! restores the main window.
 
-use std::sync::Mutex;
-
-use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, Wry};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Wry};
 
-use crate::steam::{switch, vdf};
-
-/// The window label the tray shows/hides/focuses — Tauri's default first window.
+/// The window label the tray restores/focuses — Tauri's default first window.
 const MAIN_WINDOW: &str = "main";
 
-/// Localized labels the tray menu is rendered with.
-///
-/// The frontend supplies localized *pieces*; the header itself is composed at
-/// build time from live state ([`build_menu`] probes the Steam process and the
-/// account list), so every rebuild path — frontend refresh or tray-initiated
-/// switch — derives the same truth instead of replaying a stored string.
-/// `signed_in_label` is the prefix ("Signed in as"), `steam_off_label` the
-/// whole-header replacement while Steam isn't running. Defaults are English so
-/// the setup-time build (before the frontend has mounted) reads sensibly.
-#[derive(Clone)]
-pub struct TrayLabels {
-    pub signed_in_label: String,
-    pub steam_off_label: String,
-    pub open_label: String,
-    pub exit_label: String,
-}
+/// The borderless popup window the tray opens on right-click. Declared in
+/// `tauri.conf.json` (hidden, decorationless, always-on-top); it renders the
+/// account list and quick-switch UI itself.
+const TRAY_WINDOW: &str = "tray";
 
-impl Default for TrayLabels {
-    fn default() -> Self {
-        TrayLabels {
-            signed_in_label: "Signed in as".to_string(),
-            steam_off_label: "Steam is not running".to_string(),
-            open_label: "Open steam-mate".to_string(),
-            exit_label: "Exit".to_string(),
-        }
-    }
-}
+/// Gap in physical pixels between the click point and the popup's bottom edge.
+const POPUP_GAP: f64 = 8.0;
 
-/// Managed state: the live tray handle plus the labels its menu was last built
-/// with, so the menu-event handler can rebuild after a switch without the
-/// frontend re-supplying them.
-pub struct TrayState {
-    pub tray: TrayIcon<Wry>,
-    pub labels: TrayLabels,
-}
-
-/// Read the remembered Steam accounts, or an empty list on any failure.
-///
-/// The tray must always render — a missing/unreadable `loginusers.vdf` (Steam
-/// not installed, file locked) degrades to "no accounts" rather than erroring,
-/// matching how the account list tolerates the same condition.
-fn read_accounts() -> Vec<crate::steam::account::SteamAccount> {
-    let Ok(path) = crate::steam::paths::loginusers_vdf_path() else {
-        return Vec::new();
-    };
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return Vec::new();
-    };
-    vdf::parse_loginusers(&text).unwrap_or_default()
-}
-
-/// Build the tray menu from live state and the given labels.
-///
-/// Layout: a disabled header; a separator; one normal item per remembered
-/// account labelled `persona（account_name）` and id `acct:<account_name>`; a
-/// separator; `open_label` (id "open"); `exit_label` (id "exit").
-///
-/// The header and the "● " signed-in dot are derived HERE, from a live Steam
-/// process probe plus the account list — `MostRecent` only names the auto-login
-/// target, so with Steam closed the header reads `steam_off_label` and no row
-/// gets the dot. Deriving at build time keeps every rebuild path (frontend
-/// refresh, post-switch rebuild) self-consistent.
-fn build_menu(app: &AppHandle, labels: &TrayLabels) -> tauri::Result<tauri::menu::Menu<Wry>> {
-    let running = crate::steam::process::is_steam_running();
-    let accounts = read_accounts();
-
-    let header_text = if running {
-        let persona = accounts
-            .iter()
-            .find(|a| a.most_recent)
-            .map(|a| a.persona_name.as_str())
-            .unwrap_or("—");
-        format!("{} {}", labels.signed_in_label, persona)
-    } else {
-        labels.steam_off_label.clone()
-    };
-    let header = MenuItemBuilder::with_id("header", header_text)
-        .enabled(false)
-        .build(app)?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-
-    let mut account_items = Vec::with_capacity(accounts.len());
-    for acct in &accounts {
-        let dot = if running && acct.most_recent { "● " } else { "" };
-        let label = format!("{dot}{}（{}）", acct.persona_name, acct.account_name);
-        let item = MenuItemBuilder::with_id(format!("acct:{}", acct.account_name), label)
-            .build(app)?;
-        account_items.push(item);
-    }
-
-    let sep2 = PredefinedMenuItem::separator(app)?;
-    let open = MenuItemBuilder::with_id("open", &labels.open_label).build(app)?;
-    let exit = MenuItemBuilder::with_id("exit", &labels.exit_label).build(app)?;
-
-    let mut builder = MenuBuilder::new(app).item(&header).item(&sep1);
-    for item in &account_items {
-        builder = builder.item(item);
-    }
-    builder.item(&sep2).item(&open).item(&exit).build()
-}
-
-/// Show, unminimize, and focus the main window (used by left-click and "Open").
+/// Show, unminimize, and focus the main window (used by the left-click handler).
 fn focus_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let _ = window.show();
@@ -133,124 +33,82 @@ fn focus_main_window(app: &AppHandle) {
     }
 }
 
-/// Handle a tray menu selection by item id.
+/// Position the popup window above-and-left of the click point, then show it.
 ///
-/// `acct:<name>` runs the account switch (online) on a blocking thread, then on
-/// success emits `accounts-changed` to the main window and rebuilds the tray
-/// menu (reusing the last labels) so the active "●" moves. "open" focuses the
-/// window; "exit" quits the whole app (the only path that does, since closing
-/// the window only hides it).
-fn on_menu_event(app: &AppHandle, id: &str) {
-    if let Some(account_name) = id.strip_prefix("acct:") {
-        let app = app.clone();
-        let account_name = account_name.to_string();
-        // Switching kills + relaunches Steam — keep it off the UI/event thread.
-        std::thread::spawn(move || {
-            let result = switch::switch_account(&account_name, false);
-            // Emit and rebuild on BOTH outcomes: even a failed switch may have
-            // changed real state (Steam killed, file half-flow recovered), and
-            // a silent failure would leave the old "●" lying about what
-            // happened. The frontend re-reads the truth either way.
-            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-                let _ = window.emit("accounts-changed", ());
-                if let Err(e) = &result {
-                    let _ = window.emit("switch-error", e.to_string());
-                }
-            }
-            refresh_with_last_labels(&app);
-        });
+/// The popup anchors so its bottom-right corner sits near the tray icon: with
+/// its outer size `(w, h)`, top-left goes to `(click.x - w, click.y - h - gap)`,
+/// clamped to the bounds of the monitor hosting the click. Clamping to the
+/// monitor — not to `(0, 0)` — matters on multi-monitor layouts: a monitor
+/// placed left of or above the primary lives at NEGATIVE virtual-desktop
+/// coordinates, where a zero clamp would teleport the popup to the primary.
+/// Before showing we emit `tray-popup-will-show` so the webview re-reads its
+/// data (running state, accounts, active dot) for the freshly-opened menu.
+fn show_popup(app: &AppHandle, click: PhysicalPosition<f64>) {
+    let Some(window) = app.get_webview_window(TRAY_WINDOW) else {
         return;
-    }
-    match id {
-        "open" => focus_main_window(app),
-        "exit" => app.exit(0),
-        _ => {}
-    }
-}
-
-/// Rebuild the tray menu using whatever labels are currently in state.
-///
-/// Used after a tray-initiated switch (the frontend isn't involved, so it can't
-/// re-supply labels). Only the *labels* are reused — the header text and the
-/// "●" dot are re-derived from live state inside [`build_menu`], so this path
-/// can't replay a stale "Steam is not running" caption after the switch just
-/// relaunched Steam. The new menu is swapped in via [`TrayIcon::set_menu`].
-fn refresh_with_last_labels(app: &AppHandle) {
-    let state = app.state::<Mutex<TrayState>>();
-    let labels = {
-        let guard = state.lock().unwrap();
-        guard.labels.clone()
     };
-    if let Ok(menu) = build_menu(app, &labels) {
-        let guard = state.lock().unwrap();
-        let _ = guard.tray.set_menu(Some(menu));
+    if let Ok(size) = window.outer_size() {
+        let mut x = click.x - size.width as f64;
+        let mut y = click.y - size.height as f64 - POPUP_GAP;
+        if let Ok(Some(monitor)) = app.monitor_from_point(click.x, click.y) {
+            let min_x = monitor.position().x as f64;
+            let min_y = monitor.position().y as f64;
+            let max_x = (min_x + monitor.size().width as f64 - size.width as f64).max(min_x);
+            let max_y = (min_y + monitor.size().height as f64 - size.height as f64).max(min_y);
+            x = x.clamp(min_x, max_x);
+            y = y.clamp(min_y, max_y);
+        } else {
+            // Unknown monitor: at least keep the primary's origin in bounds.
+            x = x.max(0.0);
+            y = y.max(0.0);
+        }
+        let _ = window.set_position(PhysicalPosition::new(x, y));
     }
+    let _ = window.emit("tray-popup-will-show", ());
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
-/// Build the tray at app setup with English defaults and store it in state.
+/// Build the tray icon at app setup (no menu) and store nothing — it's resident.
 ///
 /// Called from the Tauri `setup` hook. Uses the app's default window icon for
-/// the tray image, wires the menu-event handler and a left-click handler that
-/// focuses the window, and manages a [`TrayState`] holding the handle + the
-/// default labels. The frontend replaces the labels via [`tray_refresh`] on
-/// mount once its language is known.
+/// the tray image and a "steam-mate" tooltip, with NO `.menu()`: the popup
+/// webview is the menu. Left-click (button up) restores the main window;
+/// right-click (button up) positions and shows the popup.
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
-    let labels = TrayLabels::default();
-    let menu = build_menu(app, &labels)?;
-
     let mut builder = TrayIconBuilder::new()
-        .menu(&menu)
         .tooltip("steam-mate")
-        .on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
-            // Left button release shows the window; the menu opens on right-click.
             if let TrayIconEvent::Click {
-                button: tauri::tray::MouseButton::Left,
+                button,
                 button_state: tauri::tray::MouseButtonState::Up,
+                position,
                 ..
             } = event
             {
-                focus_main_window(tray.app_handle());
+                let app = tray.app_handle();
+                match button {
+                    // Left release restores the main window.
+                    tauri::tray::MouseButton::Left => focus_main_window(app),
+                    // Right release opens the popup menu at the click point.
+                    tauri::tray::MouseButton::Right => show_popup(app, position),
+                    _ => {}
+                }
             }
         });
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
     }
-    let tray = builder.build(app)?;
-
-    app.manage(Mutex::new(TrayState { tray, labels }));
+    let _tray: TrayIcon<Wry> = builder.build(app)?;
     Ok(())
 }
 
-/// Rebuild the tray menu with frontend-supplied, already-localized labels.
+/// Quit the whole app — the only path that does.
 ///
-/// The labels are pieces, not composed state: the header is derived inside
-/// [`build_menu`] from a live process probe + the account list. The labels are
-/// stored so a later tray-initiated switch can rebuild with the same language.
-/// Called by the frontend on mount, on language change, and when its
-/// steam-running probe flips (the flip itself is just the rebuild trigger).
+/// Invoked by the popup's "Exit" item. Closing the main window only hides it to
+/// the tray (see the `CloseRequested` handler in `lib.rs`), so this command is
+/// the sole way to actually exit.
 #[tauri::command]
-pub async fn tray_refresh(
-    app: AppHandle,
-    signed_in_label: String,
-    steam_off_label: String,
-    open_label: String,
-    exit_label: String,
-) -> Result<(), String> {
-    let labels = TrayLabels {
-        signed_in_label,
-        steam_off_label,
-        open_label,
-        exit_label,
-    };
-    let menu = build_menu(&app, &labels).map_err(|e| e.to_string())?;
-
-    let state = app.state::<Mutex<TrayState>>();
-    let guard = state.lock().map_err(|e| e.to_string())?;
-    guard.tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
-    drop(guard);
-    // Persist the labels for tray-initiated rebuilds after a quick-switch.
-    let mut guard = state.lock().map_err(|e| e.to_string())?;
-    guard.labels = labels;
-    Ok(())
+pub async fn app_exit(app: AppHandle) {
+    app.exit(0);
 }

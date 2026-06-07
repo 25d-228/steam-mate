@@ -23,6 +23,19 @@ fn greet(name: &str) -> String {
 /// [`run`] below, while plugins are identical across targets.
 fn base_builder() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
+        // Single instance, registered FIRST (per the plugin's docs) so a
+        // second launch exits before any other plugin runs. The callback fires
+        // in the FIRST instance: with close-to-tray, "opening the app again"
+        // is how users reach a hidden window, so surface it. Two instances
+        // must never race over loginusers.vdf / accounts.csv or show two trays.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
 }
@@ -83,7 +96,7 @@ pub fn run() {
             games::master_duel::commands::md_create_cache,
             games::master_duel::commands::md_reveal_cache,
             games::master_duel::commands::md_install_path,
-            tray::tray_refresh,
+            tray::app_exit,
         ]);
 
     #[cfg(not(windows))]

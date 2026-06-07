@@ -1,10 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main window and the tray popup. ACL is per window label: the tray webview emits/listens events (accounts-changed, switch-error, tray-popup-will-show) and hides/shows windows, so it needs explicit coverage or every such call is denied at the IPC gate.",
+  "windows": ["main", "tray"],
   "permissions": [
     "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
+    "core:window:allow-get-all-windows",
     "opener:default",
     "dialog:default"
   ]

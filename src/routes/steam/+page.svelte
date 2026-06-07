@@ -12,6 +12,7 @@
   } from "$lib/api/steam";
   import type { SteamAccount } from "$lib/api/types";
   import { t, fmt, lang, tNow, accountLabel } from "$lib/i18n";
+  import { hue, initial } from "$lib/avatar";
   import { toast, toastLoading } from "$lib/toast";
   import { toastError } from "$lib/errors";
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
@@ -21,23 +22,6 @@
     refreshSteamRunning,
   } from "$lib/stores/steam";
 
-  // ---- avatar fallback tile (colored initials) ----
-  const AV_COLORS = [
-    "#268bd2",
-    "#2aa198",
-    "#6c71c4",
-    "#b58900",
-    "#d33682",
-    "#cb4b16",
-  ];
-  function initial(s: string): string {
-    return (s.trim()[0] || "?").toUpperCase();
-  }
-  function hue(s: string): string {
-    let h = 0;
-    for (const c of s) h = (h * 31 + (c.codePointAt(0) ?? 0)) % AV_COLORS.length;
-    return AV_COLORS[h];
-  }
 
   let installPath = $state<string>("");
   let accounts = $state<SteamAccount[]>([]);
@@ -437,8 +421,10 @@
           {@render steamCard(entry.single, false)}
         {:else}
           {@const open = openFolders.has(entry.folder)}
+          {@const col = hue(entry.folder)}
           <div
             class="card folder-card"
+            style="--fc:{col}"
             title={$t("folderTitle")}
             role="button"
             tabindex="0"
@@ -447,10 +433,7 @@
               (e.key === "Enter" || e.key === " ") &&
               (e.preventDefault(), toggleFolder(entry.folder))}
           >
-            <div
-              class="cav"
-              style="background:linear-gradient(135deg,var(--violet),var(--blue))"
-            >
+            <div class="cav" style="background:{col}">
               {initial(entry.folder)}
             </div>
             <div class="cname">
@@ -463,7 +446,7 @@
           </div>
           {#if open}
             {#each entry.items as a (a.accountName)}
-              {@render steamCard(a, true)}
+              {@render steamCard(a, true, col)}
             {/each}
           {/if}
         {/if}
@@ -570,7 +553,7 @@
   </div>
 {/snippet}
 
-{#snippet steamCard(a: SteamAccount, child: boolean)}
+{#snippet steamCard(a: SteamAccount, child: boolean, fc?: string)}
   {@const uri = $avatars[a.steamId64]}
   {@const picked = selected.has(a.accountName)}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -581,6 +564,7 @@
     class:can-switch={!a.mostRecent && !selMode}
     class:selectable={selMode}
     class:selected={selMode && picked}
+    style={fc ? `--fc:${fc}` : undefined}
     title={selMode ? undefined : a.mostRecent ? undefined : $t("rowTitle")}
     role={selMode || !a.mostRecent ? "button" : undefined}
     tabindex={selMode || !a.mostRecent ? 0 : undefined}

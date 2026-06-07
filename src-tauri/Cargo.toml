@@ -1,6 +1,6 @@
 [package]
 name = "steam-mate"
-version = "0.2.2"
+version = "0.2.3"
 description = "Steam account switcher + Yu-Gi-Oh! Master Duel asset linker"
 authors = ["vibe-dog"]
 edition = "2021"
@@ -31,6 +31,7 @@ walkdir = "2"
 dirs = "5"
 base64 = "0.22"
 ureq = "2"
+tauri-plugin-single-instance = "2.4.2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

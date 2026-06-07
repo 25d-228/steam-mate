@@ -8,6 +8,7 @@
   import { asAppError } from "$lib/api/types";
   import { save } from "@tauri-apps/plugin-dialog";
   import { t, fmt, lang, tNow, accountLabel } from "$lib/i18n";
+  import { hue, initial } from "$lib/avatar";
   import { toast } from "$lib/toast";
   import { toastError } from "$lib/errors";
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
@@ -20,23 +21,6 @@
     refreshSteamRunning,
   } from "$lib/stores/steam";
 
-  // ---- avatar fallback tile (colored initials) ----
-  const AV_COLORS = [
-    "#268bd2",
-    "#2aa198",
-    "#6c71c4",
-    "#b58900",
-    "#d33682",
-    "#cb4b16",
-  ];
-  function initial(s: string): string {
-    return (s.trim()[0] || "?").toUpperCase();
-  }
-  function hue(s: string): string {
-    let h = 0;
-    for (const c of s) h = (h * 31 + (c.codePointAt(0) ?? 0)) % AV_COLORS.length;
-    return AV_COLORS[h];
-  }
 
   type Sort = "unlinked" | "added" | "alpha";
   type View = "list" | "card";
@@ -817,8 +801,10 @@
           {@render mdCard(entry.single, false)}
         {:else}
           {@const open = openFolders.has(entry.folder)}
+          {@const col = hue(entry.folder)}
           <div
             class="card folder-card"
+            style="--fc:{col}"
             title={$t("folderTitle")}
             role="button"
             tabindex="0"
@@ -827,10 +813,7 @@
               (e.key === "Enter" || e.key === " ") &&
               (e.preventDefault(), toggleFolder(entry.folder))}
           >
-            <div
-              class="cav"
-              style="background:linear-gradient(135deg,var(--violet),var(--blue))"
-            >
+            <div class="cav" style="background:{col}">
               {initial(entry.folder)}
             </div>
             <div class="cname">{open ? "▾" : "▸"} {entry.folder}</div>
@@ -840,7 +823,7 @@
           </div>
           {#if open}
             {#each entry.items as a (a.folderId)}
-              {@render mdCard(a, true)}
+              {@render mdCard(a, true, col)}
             {/each}
           {/if}
         {/if}
@@ -1032,7 +1015,7 @@
   {/if}
 {/snippet}
 
-{#snippet mdCard(a: MdAccount, child: boolean)}
+{#snippet mdCard(a: MdAccount, child: boolean, fc?: string)}
   {@const named = !!(a.accountName && a.accountName.length)}
   {@const steam = assignedSteam(a)}
   {@const uri = steam ? $avatars[steam.steamId64] : null}
@@ -1043,6 +1026,7 @@
       class:is-linked={a.isLinked}
       class:child-card={child}
       class:selected={picked}
+      style={fc ? `--fc:${fc}` : undefined}
       role="button"
       tabindex="0"
       onclick={() => toggleSel(a.folderId)}
@@ -1066,7 +1050,12 @@
       </div>
     </div>
   {:else}
-    <div class="card" class:is-linked={a.isLinked} class:child-card={child}>
+    <div
+      class="card"
+      class:is-linked={a.isLinked}
+      class:child-card={child}
+      style={fc ? `--fc:${fc}` : undefined}
+    >
       <button
         class="more"
         title={$t("delBtn")}
