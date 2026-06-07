@@ -113,6 +113,8 @@
   "toastClear2": "下次启动 Steam 将显示登录界面。",
   "toastSwitch1": "正在切换到 {p}…… 正在关闭 Steam",
   "toastSwitch2": "已以 {a} 登录{off} —— Steam 正在重启。",
+  "toastLaunch1": "正在以 {p} 启动 Steam…",
+  "toastLaunch2": "已以 {a} 登录{off} —— Steam 正在启动。",
   "offlineSuffix": "（离线模式）",
   "confirmForce": "LocalData\\{id}\\0000 中已有文件。\n\n仍要链接吗？该文件夹将被删除，并替换为指向共享缓存的链接（force=true）。",
   "toastLink1": "正在创建链接……",

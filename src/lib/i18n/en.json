@@ -113,6 +113,8 @@
   "toastClear2": "The next Steam launch shows the login screen.",
   "toastSwitch1": "Switching to {p}… closing Steam",
   "toastSwitch2": "Signed in as {a}{off} — Steam is restarting.",
+  "toastLaunch1": "Launching Steam as {p}…",
+  "toastLaunch2": "Signed in as {a}{off} — Steam is starting.",
   "offlineSuffix": " (offline mode)",
   "confirmForce": "LocalData\\{id}\\0000 already contains files.\n\nLink anyway? The folder is deleted and replaced by a link to the shared cache (force=true).",
   "toastLink1": "Creating the link…",

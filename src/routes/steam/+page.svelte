@@ -15,7 +15,11 @@
   import { toast, toastLoading } from "$lib/toast";
   import { toastError } from "$lib/errors";
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
-  import { steamAccounts, refreshSteamRunning } from "$lib/stores/steam";
+  import {
+    steamAccounts,
+    steamRunning,
+    refreshSteamRunning,
+  } from "$lib/stores/steam";
 
   // ---- avatar fallback tile (colored initials) ----
   const AV_COLORS = [
@@ -183,10 +187,17 @@
     switching = true;
     const off = offline;
     const disp = accountLabel($lang, a.personaName, a.accountName);
+    // With Steam closed there is nothing to switch from or shut down — the
+    // action is a launch, and the messages say so instead of "closing Steam".
+    const launching = !$steamRunning;
     // Spinner stays up for the whole (multi-second) kill/rewrite/relaunch; the
     // success message is shown only once switchAccount actually resolves, so a
     // failure never flashes a false "Signed in" toast.
-    toastLoading(fmt(tNow("toastSwitch1"), { p: a.personaName }));
+    toastLoading(
+      fmt(tNow(launching ? "toastLaunch1" : "toastSwitch1"), {
+        p: a.personaName,
+      }),
+    );
     try {
       await switchAccount(a.accountName, off);
       await loadAccounts();
@@ -195,7 +206,7 @@
       refreshSteamRunning();
       toast(
         "",
-        fmt(tNow("toastSwitch2"), {
+        fmt(tNow(launching ? "toastLaunch2" : "toastSwitch2"), {
           a: disp,
           off: off ? tNow("offlineSuffix") : "",
         }),

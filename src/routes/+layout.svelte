@@ -75,7 +75,7 @@
   type Palette = "solarized" | "steam" | "forest" | "iris";
   type Theme = "auto" | "light" | "dark";
 
-  let palette = $state<Palette>("solarized");
+  let palette = $state<Palette>("steam");
   let theme = $state<Theme>("auto");
   let games = $state<GameInfo[]>([]);
 
@@ -90,19 +90,21 @@
     const root = document.documentElement;
     if (theme === "auto") delete root.dataset.theme;
     else root.dataset.theme = theme;
-    if (palette === "solarized") delete root.dataset.palette;
-    else root.dataset.palette = palette;
-    localStorage.setItem("sm-theme", theme);
-    localStorage.setItem("sm-palette", palette);
+    // "solarized" matches no [data-palette] rule, so the bare :root vars apply.
+    root.dataset.palette = palette;
   }
 
+  // Persist only on an explicit pick — applyAppearance() must not write the
+  // startup default to storage as if the user had chosen it.
   function onPalette(e: Event) {
     palette = (e.currentTarget as HTMLSelectElement).value as Palette;
     applyAppearance();
+    localStorage.setItem("sm-palette", palette);
   }
   function onTheme(e: Event) {
     theme = (e.currentTarget as HTMLSelectElement).value as Theme;
     applyAppearance();
+    localStorage.setItem("sm-theme", theme);
   }
   function onLang(e: Event) {
     setLang((e.currentTarget as HTMLSelectElement).value as Lang);
@@ -121,7 +123,15 @@
 
   onMount(() => {
     const storedTheme = localStorage.getItem("sm-theme") as Theme | null;
-    const storedPalette = localStorage.getItem("sm-palette") as Palette | null;
+    // Builds before 0.2.2 persisted the startup default ("solarized") on every
+    // launch without the user choosing it, so a stored "solarized" carries no
+    // signal — drop it once and let the Steam default apply. From now on the
+    // value is written only on an explicit pick, so choosing Solarized sticks.
+    let storedPalette = localStorage.getItem("sm-palette") as Palette | null;
+    if (storedPalette === "solarized") {
+      localStorage.removeItem("sm-palette");
+      storedPalette = null;
+    }
     if (storedTheme) theme = storedTheme;
     if (storedPalette) palette = storedPalette;
     applyAppearance();
@@ -195,7 +205,7 @@
       </span>
       <div>
         <div class="name">steam-mate</div>
-        <div class="ver">v0.2.1</div>
+        <div class="ver">v0.2.2</div>
       </div>
     </div>
 
@@ -257,8 +267,8 @@
         value={palette}
         onchange={onPalette}
       >
-        <option value="solarized">Solarized</option>
         <option value="steam">Steam</option>
+        <option value="solarized">Solarized</option>
         <option value="forest">Forest</option>
         <option value="iris">Iris</option>
       </select>

@@ -113,6 +113,8 @@
   "toastClear2": "下次啟動 Steam 將顯示登入畫面。",
   "toastSwitch1": "正在切換到 {p}…… 正在關閉 Steam",
   "toastSwitch2": "已以 {a} 登入{off} —— Steam 正在重新啟動。",
+  "toastLaunch1": "正在以 {p} 啟動 Steam…",
+  "toastLaunch2": "已以 {a} 登入{off} —— Steam 正在啟動。",
   "offlineSuffix": "（離線模式）",
   "confirmForce": "LocalData\\{id}\\0000 中已有檔案。\n\n仍要連結嗎？該資料夾將被刪除，並替換為指向共享快取的連結（force=true）。",
   "toastLink1": "正在建立連結……",

@@ -113,6 +113,8 @@
   "toastClear2": "次回の Steam 起動時はログイン画面になります。",
   "toastSwitch1": "{p} に切り替え中… Steam を終了しています",
   "toastSwitch2": "{a} でログインしました{off} — Steam を再起動中。",
+  "toastLaunch1": "{p} で Steam を起動しています…",
+  "toastLaunch2": "{a} でログインしました{off} — Steam を起動中。",
   "offlineSuffix": "（オフラインモード）",
   "confirmForce": "LocalData\\{id}\\0000 には既にファイルがあります。\n\nリンクしますか？フォルダは削除され、共有キャッシュへのリンクに置き換わります（force=true）。",
   "toastLink1": "リンクを作成中…",
