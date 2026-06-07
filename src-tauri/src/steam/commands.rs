@@ -4,7 +4,19 @@ use std::fs;
 
 use crate::error::{AppError, AppResult};
 use crate::steam::account::SteamAccount;
-use crate::steam::{avatar, paths, registry, switch, vdf};
+use crate::steam::{avatar, paths, process, registry, switch, vdf};
+
+/// Whether `Steam.exe` is currently running.
+///
+/// The frontend's "Signed in as" surfaces are only truthful while Steam is up —
+/// `MostRecent` in loginusers.vdf names the auto-login target, not a live
+/// session — so they go neutral when this returns false.
+#[tauri::command]
+pub async fn steam_is_running() -> AppResult<bool> {
+    tauri::async_runtime::spawn_blocking(process::is_steam_running)
+        .await
+        .map_err(|e| AppError::Io(e.to_string()))
+}
 
 /// Return Steam's install directory as a string.
 ///

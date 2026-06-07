@@ -9,7 +9,13 @@
   import { lang, setLang, t, tNow, type Lang } from "$lib/i18n";
   import { toastError } from "$lib/errors";
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
-  import { steamAccounts, ensureSteamAccounts, refreshSteamAccounts } from "$lib/stores/steam";
+  import {
+    steamAccounts,
+    ensureSteamAccounts,
+    refreshSteamAccounts,
+    steamRunning,
+    refreshSteamRunning,
+  } from "$lib/stores/steam";
   import Toast from "$lib/components/Toast.svelte";
 
   let { children } = $props();
@@ -32,8 +38,11 @@
     return AV_COLORS[h];
   }
 
-  // The signed-in account is the one Steam marks MostRecent.
+  // MostRecent names the auto-login target; it is "signed in" only while a
+  // Steam process actually exists. With Steam closed the chip and tray must
+  // not claim anyone is signed in.
   const current = $derived($steamAccounts.find((a) => a.mostRecent) ?? null);
+  const signedIn = $derived($steamRunning ? current : null);
 
   // Fetch its avatar as soon as we know who is signed in.
   $effect(() => {
@@ -41,17 +50,21 @@
   });
 
   // ---- tray refresh ----
-  // The backend owns the real Windows tray; we feed it the localized labels and
-  // the current persona. Re-run on mount and whenever the language or the
-  // signed-in account changes (camelCase args map to the Rust snake_case ones).
+  // The backend owns the real Windows tray AND derives the header + signed-in
+  // dot itself from live state — we only supply localized label pieces. The
+  // reactive reads are rebuild triggers: language change re-localizes, and a
+  // steamRunning or active-account flip prompts the backend to re-derive
+  // (camelCase args map to the Rust snake_case ones).
   $effect(() => {
-    // read reactive deps so the effect re-runs on change
     const l = $lang;
+    const running = $steamRunning;
     const persona = current?.personaName;
     void l;
-    const dash = "—";
+    void running;
+    void persona;
     invoke("tray_refresh", {
-      signedInText: `${tNow("signedInAs")} ${persona || dash}`,
+      signedInLabel: tNow("signedInAs"),
+      steamOffLabel: tNow("steamOff"),
       openLabel: tNow("trayOpen"),
       exitLabel: tNow("trayExit"),
     }).catch(() => {
@@ -104,6 +117,7 @@
 
   let unlisten: UnlistenFn | undefined;
   let unlistenErr: UnlistenFn | undefined;
+  let runTimer: ReturnType<typeof setInterval> | undefined;
 
   onMount(() => {
     const storedTheme = localStorage.getItem("sm-theme") as Theme | null;
@@ -123,6 +137,12 @@
     // Populate the signed-in chip even before the Steam page is visited.
     ensureSteamAccounts();
 
+    // Keep the "is Steam actually running" probe fresh: now, on focus, and on
+    // a slow tick — the user can open or quit Steam outside the app anytime.
+    refreshSteamRunning();
+    window.addEventListener("focus", refreshSteamRunning);
+    runTimer = setInterval(refreshSteamRunning, 5000);
+
     // The backend emits "accounts-changed" after a tray quick-switch (and any
     // other out-of-band change); refresh the shared store so the chip, tray
     // text, and Steam page all react.
@@ -130,6 +150,7 @@
       refreshSteamAccounts().catch(() => {
         /* best-effort */
       });
+      refreshSteamRunning();
     })
       .then((un) => {
         unlisten = un;
@@ -154,6 +175,11 @@
   onDestroy(() => {
     unlisten?.();
     unlistenErr?.();
+    if (runTimer) clearInterval(runTimer);
+    // Unlike onMount, onDestroy also runs during prerender — guard the
+    // window access (same pattern as the pages).
+    if (typeof window !== "undefined")
+      window.removeEventListener("focus", refreshSteamRunning);
   });
 </script>
 
@@ -169,25 +195,27 @@
       </span>
       <div>
         <div class="name">steam-mate</div>
-        <div class="ver">v0.2.0</div>
+        <div class="ver">v0.2.1</div>
       </div>
     </div>
 
-    <div class="me" title={current?.accountName ?? ""}>
+    <div class="me" title={signedIn?.accountName ?? ""}>
       <span
         class="me-av"
-        style="background:{current ? hue(current.accountName) : 'var(--border)'}"
+        style="background:{signedIn ? hue(signedIn.accountName) : 'var(--border)'}"
       >
-        {#if current}
-          {#if $avatars[current.steamId64]}
-            <img src={$avatars[current.steamId64]} alt="" />
+        {#if signedIn}
+          {#if $avatars[signedIn.steamId64]}
+            <img src={$avatars[signedIn.steamId64]} alt="" />
           {/if}
-          {initial(current.personaName)}
+          {initial(signedIn.personaName)}
         {/if}
       </span>
       <span class="me-text">
-        <span class="me-label">{$t("signedInAs")}</span>
-        <b>{current ? current.personaName : "—"}</b>
+        <span class="me-label"
+          >{$steamRunning ? $t("signedInAs") : $t("steamOff")}</span
+        >
+        <b>{signedIn ? signedIn.personaName : "—"}</b>
       </span>
     </div>
 

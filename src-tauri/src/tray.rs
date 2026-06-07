@@ -25,13 +25,17 @@ const MAIN_WINDOW: &str = "main";
 
 /// Localized labels the tray menu is rendered with.
 ///
-/// `signed_in_text` is the fully-composed header (e.g. "Signed in as 天盃龍") —
-/// the frontend composes it so the tray never has to localize. `open_label` and
-/// `exit_label` are the two fixed action items. Defaults are English so the
-/// setup-time build (before the frontend has mounted) reads sensibly.
+/// The frontend supplies localized *pieces*; the header itself is composed at
+/// build time from live state ([`build_menu`] probes the Steam process and the
+/// account list), so every rebuild path — frontend refresh or tray-initiated
+/// switch — derives the same truth instead of replaying a stored string.
+/// `signed_in_label` is the prefix ("Signed in as"), `steam_off_label` the
+/// whole-header replacement while Steam isn't running. Defaults are English so
+/// the setup-time build (before the frontend has mounted) reads sensibly.
 #[derive(Clone)]
 pub struct TrayLabels {
-    pub signed_in_text: String,
+    pub signed_in_label: String,
+    pub steam_off_label: String,
     pub open_label: String,
     pub exit_label: String,
 }
@@ -39,7 +43,8 @@ pub struct TrayLabels {
 impl Default for TrayLabels {
     fn default() -> Self {
         TrayLabels {
-            signed_in_text: "Signed in as —".to_string(),
+            signed_in_label: "Signed in as".to_string(),
+            steam_off_label: "Steam is not running".to_string(),
             open_label: "Open steam-mate".to_string(),
             exit_label: "Exit".to_string(),
         }
@@ -69,23 +74,39 @@ fn read_accounts() -> Vec<crate::steam::account::SteamAccount> {
     vdf::parse_loginusers(&text).unwrap_or_default()
 }
 
-/// Build the tray menu from the current accounts and the given labels.
+/// Build the tray menu from live state and the given labels.
 ///
-/// Layout: a disabled header (`signed_in_text`); a separator; one normal item
-/// per remembered account labelled `persona（account_name）` with a leading
-/// "● " on the currently-active (`most_recent`) account and id
-/// `acct:<account_name>`; a separator; `open_label` (id "open"); `exit_label`
-/// (id "exit"). The header is disabled so it reads as a caption, not an action.
+/// Layout: a disabled header; a separator; one normal item per remembered
+/// account labelled `persona（account_name）` and id `acct:<account_name>`; a
+/// separator; `open_label` (id "open"); `exit_label` (id "exit").
+///
+/// The header and the "● " signed-in dot are derived HERE, from a live Steam
+/// process probe plus the account list — `MostRecent` only names the auto-login
+/// target, so with Steam closed the header reads `steam_off_label` and no row
+/// gets the dot. Deriving at build time keeps every rebuild path (frontend
+/// refresh, post-switch rebuild) self-consistent.
 fn build_menu(app: &AppHandle, labels: &TrayLabels) -> tauri::Result<tauri::menu::Menu<Wry>> {
-    let header = MenuItemBuilder::with_id("header", &labels.signed_in_text)
+    let running = crate::steam::process::is_steam_running();
+    let accounts = read_accounts();
+
+    let header_text = if running {
+        let persona = accounts
+            .iter()
+            .find(|a| a.most_recent)
+            .map(|a| a.persona_name.as_str())
+            .unwrap_or("—");
+        format!("{} {}", labels.signed_in_label, persona)
+    } else {
+        labels.steam_off_label.clone()
+    };
+    let header = MenuItemBuilder::with_id("header", header_text)
         .enabled(false)
         .build(app)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
 
-    let accounts = read_accounts();
     let mut account_items = Vec::with_capacity(accounts.len());
     for acct in &accounts {
-        let dot = if acct.most_recent { "● " } else { "" };
+        let dot = if running && acct.most_recent { "● " } else { "" };
         let label = format!("{dot}{}（{}）", acct.persona_name, acct.account_name);
         let item = MenuItemBuilder::with_id(format!("acct:{}", acct.account_name), label)
             .build(app)?;
@@ -150,7 +171,10 @@ fn on_menu_event(app: &AppHandle, id: &str) {
 /// Rebuild the tray menu using whatever labels are currently in state.
 ///
 /// Used after a tray-initiated switch (the frontend isn't involved, so it can't
-/// re-supply labels). The new menu is swapped in via [`TrayIcon::set_menu`].
+/// re-supply labels). Only the *labels* are reused — the header text and the
+/// "●" dot are re-derived from live state inside [`build_menu`], so this path
+/// can't replay a stale "Steam is not running" caption after the switch just
+/// relaunched Steam. The new menu is swapped in via [`TrayIcon::set_menu`].
 fn refresh_with_last_labels(app: &AppHandle) {
     let state = app.state::<Mutex<TrayState>>();
     let labels = {
@@ -200,19 +224,22 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 
 /// Rebuild the tray menu with frontend-supplied, already-localized labels.
 ///
-/// `signed_in_text` is the composed header (e.g. "Signed in as 天盃龍"). The
-/// labels are stored so a later tray-initiated switch can rebuild with the same
-/// language, then the menu is rebuilt from the current account list and swapped
-/// in. Called by the frontend on mount and whenever the language changes.
+/// The labels are pieces, not composed state: the header is derived inside
+/// [`build_menu`] from a live process probe + the account list. The labels are
+/// stored so a later tray-initiated switch can rebuild with the same language.
+/// Called by the frontend on mount, on language change, and when its
+/// steam-running probe flips (the flip itself is just the rebuild trigger).
 #[tauri::command]
 pub async fn tray_refresh(
     app: AppHandle,
-    signed_in_text: String,
+    signed_in_label: String,
+    steam_off_label: String,
     open_label: String,
     exit_label: String,
 ) -> Result<(), String> {
     let labels = TrayLabels {
-        signed_in_text,
+        signed_in_label,
+        steam_off_label,
         open_label,
         exit_label,
     };

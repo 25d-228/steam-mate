@@ -80,6 +80,20 @@ export function tNow(key: string): string {
   return lookup(get(lang), key);
 }
 
+/**
+ * Display label for a Steam account — persona + login, half-width parens in
+ * English, full-width otherwise. One home for a format several surfaces render.
+ */
+export function accountLabel(
+  l: Lang,
+  personaName: string,
+  accountName: string,
+): string {
+  return l === "en"
+    ? `${personaName} (${accountName})`
+    : `${personaName}（${accountName}）`;
+}
+
 // Keep the document lang attribute in sync from the start.
 if (typeof document !== "undefined") {
   document.documentElement.lang = htmlLang(get(lang));

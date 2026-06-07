@@ -28,6 +28,10 @@ export function getAvatar(steamId64: string): Promise<string | null> {
   return invoke<string | null>("steam_get_avatar", { steamId64 });
 }
 
+export function isRunning(): Promise<boolean> {
+  return invoke<boolean>("steam_is_running");
+}
+
 export function listSupportedGames(): Promise<GameInfo[]> {
   return invoke<GameInfo[]>("list_supported_games");
 }

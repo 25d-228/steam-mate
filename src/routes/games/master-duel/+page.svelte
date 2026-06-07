@@ -7,7 +7,7 @@
   import type { MdAccount, SteamAccount } from "$lib/api/types";
   import { asAppError } from "$lib/api/types";
   import { save } from "@tauri-apps/plugin-dialog";
-  import { t, fmt, lang, tNow } from "$lib/i18n";
+  import { t, fmt, lang, tNow, accountLabel } from "$lib/i18n";
   import { toast } from "$lib/toast";
   import { toastError } from "$lib/errors";
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
@@ -16,6 +16,8 @@
     ensureSteamAccounts,
     refreshSteamAccounts,
     steamByLogin,
+    steamRunning,
+    refreshSteamRunning,
   } from "$lib/stores/steam";
 
   // ---- avatar fallback tile (colored initials) ----
@@ -398,8 +400,11 @@
       // delete then fails, only a re-addable Steam login was removed.
       if (both && steamName) {
         await forgetAccount(steamName);
-        // refresh the shared Steam store so the persona/avatar map updates
+        // refresh the shared Steam store so the persona/avatar map updates,
+        // and re-probe running state — the forget killed Steam without
+        // relaunching it.
         await refreshSteamAccounts().catch(() => {});
+        refreshSteamRunning();
       }
       await md.deleteAccount(a.folderId);
       await loadAccounts();
@@ -499,7 +504,10 @@
       // delete uses, so a forget failure never wipes a save folder.
       if (logins.length) {
         await invoke<void>("steam_forget_accounts", { accountNames: logins });
+        // The batch forget killed Steam without relaunching it — refresh both
+        // the account map and the running probe.
         await refreshSteamAccounts().catch(() => {});
+        refreshSteamRunning();
       }
       // One backend call for the whole batch: one running check, one install
       // resolve, and a profile that fails is skipped and reported instead of
@@ -898,11 +906,9 @@
     <option value="">{$t("assignNone")}</option>
     {#each $steamAccounts as s (s.accountName)}
       <option value={s.accountName}
-        >{s.mostRecent
+        >{s.mostRecent && $steamRunning
           ? `● ${s.personaName}（${s.accountName}）· ${$t("signedIn")}`
-          : $lang === "en"
-            ? `${s.personaName} (${s.accountName})`
-            : `${s.personaName}（${s.accountName}）`}</option
+          : accountLabel($lang, s.personaName, s.accountName)}</option
       >
     {/each}
   </select>
@@ -1129,10 +1135,7 @@
           <span>
             <div class="ot">
               {fmt($t("delSteamLabel"), {
-                s:
-                  $lang === "en"
-                    ? `${delSteam.personaName} (${delSteam.accountName})`
-                    : `${delSteam.personaName}（${delSteam.accountName}）`,
+                s: accountLabel($lang, delSteam.personaName, delSteam.accountName),
               })}
             </div>
             <div class="od">{$t("delSteamDesc")}</div>

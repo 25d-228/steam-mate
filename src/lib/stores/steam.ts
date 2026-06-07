@@ -5,10 +5,25 @@
 // MD page reimplement the Steam fetch, both pages read/refresh this store.
 
 import { writable, get } from "svelte/store";
-import { listAccounts } from "../api/steam";
+import { listAccounts, isRunning } from "../api/steam";
 import type { SteamAccount } from "../api/types";
 
 export const steamAccounts = writable<SteamAccount[]>([]);
+
+// Whether Steam.exe is running right now. "Signed in as" claims are only
+// truthful while Steam is up — MostRecent in loginusers.vdf names the
+// auto-login target, not a live session. Defaults true so the UI doesn't
+// flash "Steam is not running" before the first probe answers.
+export const steamRunning = writable<boolean>(true);
+
+/** Probe the backend for a live Steam process (best effort). */
+export async function refreshSteamRunning(): Promise<void> {
+  try {
+    steamRunning.set(await isRunning());
+  } catch {
+    /* keep the last value */
+  }
+}
 
 /** Fetch the Steam account list into the store (best effort). */
 export async function refreshSteamAccounts(): Promise<SteamAccount[]> {

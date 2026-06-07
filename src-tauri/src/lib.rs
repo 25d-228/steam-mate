@@ -63,6 +63,7 @@ pub fn run() {
             steam::commands::steam_forget_account,
             steam::commands::steam_forget_accounts,
             steam::commands::steam_get_avatar,
+            steam::commands::steam_is_running,
             games::list_supported_games,
             games::master_duel::commands::md_list_accounts,
             games::master_duel::commands::md_link_account,

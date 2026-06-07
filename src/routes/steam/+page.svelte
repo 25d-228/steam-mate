@@ -11,11 +11,11 @@
     forgetAccount,
   } from "$lib/api/steam";
   import type { SteamAccount } from "$lib/api/types";
-  import { t, fmt, lang, tNow } from "$lib/i18n";
+  import { t, fmt, lang, tNow, accountLabel } from "$lib/i18n";
   import { toast, toastLoading } from "$lib/toast";
   import { toastError } from "$lib/errors";
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
-  import { steamAccounts } from "$lib/stores/steam";
+  import { steamAccounts, refreshSteamRunning } from "$lib/stores/steam";
 
   // ---- avatar fallback tile (colored initials) ----
   const AV_COLORS = [
@@ -182,10 +182,7 @@
     if (a.mostRecent || switching || selMode) return;
     switching = true;
     const off = offline;
-    const disp =
-      $lang === "en"
-        ? `${a.personaName} (${a.accountName})`
-        : `${a.personaName}（${a.accountName}）`;
+    const disp = accountLabel($lang, a.personaName, a.accountName);
     // Spinner stays up for the whole (multi-second) kill/rewrite/relaunch; the
     // success message is shown only once switchAccount actually resolves, so a
     // failure never flashes a false "Signed in" toast.
@@ -193,6 +190,9 @@
     try {
       await switchAccount(a.accountName, off);
       await loadAccounts();
+      // The switch just relaunched Steam — re-probe so the chip and tray flip
+      // to "signed in" without waiting for the next interval tick.
+      refreshSteamRunning();
       toast(
         "",
         fmt(tNow("toastSwitch2"), {
@@ -257,6 +257,8 @@
             accountNames: batch,
           });
           await loadAccounts();
+          // The forget killed Steam without relaunching it — re-probe.
+          refreshSteamRunning();
           setSelMode(false);
           toast("", fmt(tNow("toastForgetN"), { n }));
         } catch (e) {
@@ -281,6 +283,8 @@
       try {
         await forgetAccount(name);
         await loadAccounts();
+        // The forget killed Steam without relaunching it — re-probe.
+        refreshSteamRunning();
         toast("", fmt(tNow("toastForget"), { a: name }));
       } catch (e) {
         toastError(e);

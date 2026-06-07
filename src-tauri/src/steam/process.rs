@@ -5,7 +5,7 @@ use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
 
-use sysinfo::{ProcessesToUpdate, System};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 
 use crate::error::{AppError, AppResult};
 
@@ -14,12 +14,14 @@ const STEAM_PROCESS: &str = "steam.exe";
 
 /// Whether a `steam.exe` process is currently running.
 ///
-/// Takes a fresh snapshot of all processes (sysinfo caches nothing across
-/// calls here) and matches any process whose name equals `steam.exe`
-/// case-insensitively.
+/// Takes a fresh snapshot of process *names only* — `ProcessRefreshKind::new()`
+/// skips the per-process CPU/memory/disk collection a default refresh does,
+/// which matters now that the frontend polls this every few seconds (same
+/// pattern as the Master Duel probe). Matches case-insensitively.
 pub fn is_steam_running() -> bool {
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+    let sys = System::new_with_specifics(
+        RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+    );
     sys.processes().values().any(|p| {
         p.name()
             .to_str()
