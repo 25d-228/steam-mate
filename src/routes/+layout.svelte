@@ -92,6 +92,8 @@
   let unlisten: UnlistenFn | undefined;
   let unlistenErr: UnlistenFn | undefined;
   let runTimer: ReturnType<typeof setInterval> | undefined;
+  // How often to re-probe whether Steam is actually running.
+  const RUNNING_POLL_MS = 5000;
 
   onMount(() => {
     const storedTheme = localStorage.getItem("sm-theme") as Theme | null;
@@ -128,7 +130,7 @@
     // a slow tick — the user can open or quit Steam outside the app anytime.
     refreshSteamRunning();
     window.addEventListener("focus", refreshSteamRunning);
-    runTimer = setInterval(refreshSteamRunning, 5000);
+    runTimer = setInterval(refreshSteamRunning, RUNNING_POLL_MS);
 
     // The backend emits "accounts-changed" after a tray quick-switch (and any
     // other out-of-band change); refresh the shared store so the chip, tray

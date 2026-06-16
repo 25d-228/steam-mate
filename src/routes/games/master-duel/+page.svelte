@@ -38,6 +38,8 @@
   let view = $state<View>("list");
 
   let runningTimer: ReturnType<typeof setInterval> | undefined;
+  // How often to re-probe whether Master Duel is running.
+  const RUNNING_POLL_MS = 5000;
 
   // login (accountName) → Steam account, for the current list. A profile's
   // stored steamLogin resolves through this: present → that account (avatar,
@@ -54,9 +56,7 @@
   }
 
   const cacheSizeLabel = $derived(
-    cacheBytes == null
-      ? "—"
-      : `${(cacheBytes / 1024 / 1024 / 1024).toFixed(1)} GB`,
+    cacheBytes == null ? "—" : formatGb(cacheBytes),
   );
 
   function orderIndex(a: MdAccount): number {
@@ -625,7 +625,7 @@
     ensureSteamAccounts();
     checkRunning();
     reloadAccountsQuietly();
-    runningTimer = setInterval(checkRunning, 5000);
+    runningTimer = setInterval(checkRunning, RUNNING_POLL_MS);
     window.addEventListener("keydown", onKeydown);
   });
   onDestroy(() => {
