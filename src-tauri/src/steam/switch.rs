@@ -34,6 +34,52 @@ fn atomic_write(path: &Path, text: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Rewrite Steam `config.vdf` text so `AlwaysShowUserChooser` is `"0"`.
+///
+/// When that key is `"1"`, Steam ignores the auto-login user and always stops at
+/// the account chooser on launch — so the account we switched to never signs in
+/// silently, no matter how correct the registry and `loginusers.vdf` are. We
+/// flip just that one value and leave the rest of the (large) file byte-for-byte
+/// intact. Returns `Some(new_text)` only when a change is actually needed;
+/// `None` if the key is already `"0"` or absent (absent is Steam's default
+/// auto-login behavior, which is what we want anyway).
+fn set_chooser_off(config_text: &str) -> Option<String> {
+    let key = "\"AlwaysShowUserChooser\"";
+    let key_idx = config_text.find(key)?;
+    let after_key = key_idx + key.len();
+    // The first quote after the key opens the value; the next quote closes it.
+    let val_start = after_key + config_text[after_key..].find('"')? + 1;
+    let val_end = val_start + config_text[val_start..].find('"')?;
+    if &config_text[val_start..val_end] == "0" {
+        return None;
+    }
+    let mut out = String::with_capacity(config_text.len());
+    out.push_str(&config_text[..val_start]);
+    out.push('0');
+    out.push_str(&config_text[val_end..]);
+    Some(out)
+}
+
+/// Ensure Steam silently signs into the switched account instead of stopping at
+/// the account chooser.
+///
+/// Sets `AlwaysShowUserChooser` to `"0"` in `config.vdf` when it isn't already.
+/// Best-effort by design: a missing, unreadable, or unwritable `config.vdf` (or
+/// one without the key) is not an error — a switch must never fail over it.
+/// Steam must be stopped first, since a running client rewrites `config.vdf` on
+/// exit and would undo the change.
+fn force_auto_login() {
+    let Ok(path) = paths::config_vdf_path() else {
+        return;
+    };
+    let Ok(text) = fs::read_to_string(&path) else {
+        return;
+    };
+    if let Some(new_text) = set_chooser_off(&text) {
+        let _ = atomic_write(&path, &new_text);
+    }
+}
+
 /// Switch Steam's active account to `account_name`, optionally launching offline.
 ///
 /// Steps, strictly in order:
@@ -51,6 +97,11 @@ pub fn switch_account(account_name: &str, offline_mode: bool) -> AppResult<()> {
     let install = paths::get_steam_install_path()?;
     let steam_exe = install.join("Steam.exe");
     process::kill_steam(&steam_exe)?;
+
+    // 3b. With Steam stopped, make sure it will auto-login the target rather than
+    //     stop at the account chooser (the `AlwaysShowUserChooser=1` trap, which
+    //     otherwise blocks silent sign-in for every account). Best-effort.
+    force_auto_login();
 
     // 4. + 5. Write the registry auto-login user and loginusers.vdf. Steam is now
     //    force-closed, so if either write fails we must still relaunch Steam
@@ -153,4 +204,40 @@ pub fn forget_accounts(account_names: &[String]) -> AppResult<u32> {
     }
 
     Ok(removed.len() as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::set_chooser_off;
+
+    #[test]
+    fn flips_chooser_from_one_to_zero() {
+        // Real Steam writes the value tab-separated after the key.
+        let cfg = "\t\t\t\t\"AlwaysShowUserChooser\"\t\t\"1\"\n";
+        let out = set_chooser_off(cfg).expect("a change is needed");
+        assert!(out.contains("\"AlwaysShowUserChooser\"\t\t\"0\""));
+        assert!(!out.contains("\"1\""));
+    }
+
+    #[test]
+    fn no_change_when_already_zero() {
+        let cfg = "\"AlwaysShowUserChooser\"\t\t\"0\"";
+        assert!(set_chooser_off(cfg).is_none());
+    }
+
+    #[test]
+    fn no_change_when_key_absent() {
+        // Absent key = Steam's default auto-login behavior; nothing to do.
+        let cfg = "\"SomethingElse\"\t\t\"1\"";
+        assert!(set_chooser_off(cfg).is_none());
+    }
+
+    #[test]
+    fn preserves_surrounding_content() {
+        let cfg = "{ \"a\" \"keep\" \"AlwaysShowUserChooser\" \"1\" \"b\" \"keep2\" }";
+        let out = set_chooser_off(cfg).unwrap();
+        assert!(out.contains("\"a\" \"keep\""));
+        assert!(out.contains("\"b\" \"keep2\""));
+        assert!(out.contains("\"AlwaysShowUserChooser\" \"0\""));
+    }
 }

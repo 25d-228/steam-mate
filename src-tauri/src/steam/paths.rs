@@ -34,3 +34,13 @@ pub fn loginusers_vdf_path() -> AppResult<PathBuf> {
         .join("config")
         .join("loginusers.vdf"))
 }
+
+/// Path to `<steam-install>\config\config.vdf`.
+///
+/// This is the global Steam client config (distinct from the per-machine token
+/// store in `%LocalAppData%\Steam\local.vdf`). steam-mate touches exactly one
+/// key in it — `AlwaysShowUserChooser` — to keep silent auto-login working; see
+/// [`super::switch::force_auto_login`]. Existence isn't checked here.
+pub fn config_vdf_path() -> AppResult<PathBuf> {
+    Ok(get_steam_install_path()?.join("config").join("config.vdf"))
+}

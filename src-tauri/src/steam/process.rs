@@ -33,21 +33,34 @@ pub fn is_steam_running() -> bool {
 ///
 /// No-op (returns `Ok`) if Steam isn't running. Otherwise asks Steam to shut
 /// itself down via `steam.exe -shutdown` (ignoring any spawn error), then polls
-/// for up to 3000 ms in 150 ms steps. If Steam is still alive after that, every
-/// `steam.exe` process is `kill()`ed and we wait a final 500 ms; if it *still*
+/// for up to 15000 ms in 150 ms steps. If Steam is still alive after that, every
+/// `steam.exe` process is `kill()`ed and we wait a final 800 ms; if it *still*
 /// won't die we return [`AppError::ProcessKillFailed`].
+///
+/// The graceful window is deliberately generous: on the modern client Steam
+/// flushes its login-token cache (`%LocalAppData%\Steam\local.vdf`) as part of a
+/// clean shutdown, so force-killing it mid-flush can throw away a still-valid
+/// auto-login token and drop the next launch at the login screen. The poll
+/// returns the instant Steam is actually gone, so a normal fast shutdown isn't
+/// slowed — the long cap only bites when Steam is genuinely slow to exit, which
+/// is exactly when we want to wait rather than force-kill.
 pub fn kill_steam(steam_exe: &Path) -> AppResult<()> {
     if !is_steam_running() {
         return Ok(());
     }
 
-    // Graceful: let Steam tear down its own children/overlay cleanly.
+    // Graceful: let Steam tear down its own children/overlay cleanly and persist
+    // its token cache before exit.
     let _ = Command::new(steam_exe).arg("-shutdown").spawn();
 
-    // Poll up to 3000 ms in 150 ms steps for the graceful exit.
-    for _ in 0..20 {
+    // Poll up to 15000 ms in 150 ms steps for the graceful exit.
+    for _ in 0..100 {
         sleep(Duration::from_millis(150));
         if !is_steam_running() {
+            // Steam's process is gone, but give the OS a moment to release the
+            // single-instance lock / file handles before the caller relaunches,
+            // so the fresh instance isn't bounced by the still-closing one.
+            sleep(Duration::from_millis(800));
             return Ok(());
         }
     }
@@ -64,7 +77,7 @@ pub fn kill_steam(steam_exe: &Path) -> AppResult<()> {
             proc.kill();
         }
     }
-    sleep(Duration::from_millis(500));
+    sleep(Duration::from_millis(800));
 
     if is_steam_running() {
         return Err(AppError::ProcessKillFailed(

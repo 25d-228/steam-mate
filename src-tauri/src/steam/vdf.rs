@@ -82,8 +82,11 @@ fn account_name_of<'a>(user: &'a Obj<'_>) -> Option<&'a str> {
 
 /// Rewrite `loginusers.vdf` text so `account_name` becomes the active user.
 ///
-/// Sets `MostRecent=1` and `RememberPassword=1` on the matching block and
-/// `MostRecent=0` on every other block. The target's `WantsOfflineMode` +
+/// Sets `MostRecent=1`, `RememberPassword=1`, and `AllowAutoLogin=1` on the
+/// matching block and `MostRecent=0` on every other block. `AllowAutoLogin=1`
+/// is the field Steam reads to sign in automatically; without it Steam stops at
+/// the login screen even when the registry auto-login user points at this
+/// account. The target's `WantsOfflineMode` +
 /// `SkipOfflineModeWarning` are set to `1` when `offline_mode` is true and
 /// explicitly cleared to `0` otherwise — so an online switch always cancels a
 /// previously-requested offline launch rather than leaving it stuck. Returns
@@ -115,6 +118,12 @@ pub fn set_active_account(
                 found = true;
                 set_str(user, "MostRecent", "1");
                 set_str(user, "RememberPassword", "1");
+                // Steam reads AllowAutoLogin to decide whether to sign in
+                // automatically or stop at the login screen. It clears this to
+                // "0" on accounts as they age, so re-assert it on every switch
+                // rather than inheriting whatever Steam last wrote — otherwise a
+                // switch to a cooled-off account lands on the password prompt.
+                set_str(user, "AllowAutoLogin", "1");
                 // Set the offline flags when requested, and clear them when not
                 // — otherwise an account launched offline once could never be
                 // switched back online from here.
@@ -235,6 +244,16 @@ mod tests {
         let accounts = parse_loginusers(&updated).unwrap();
         let carol = account(&accounts, "carol");
         assert!(carol.remember_password);
+    }
+
+    #[test]
+    fn switch_sets_allow_auto_login_on_target() {
+        // carol starts with AllowAutoLogin=0; switching must enable it, or Steam
+        // stops at the login screen instead of signing in automatically.
+        let updated = set_active_account(FIXTURE, "carol", false).unwrap();
+        let accounts = parse_loginusers(&updated).unwrap();
+        let carol = account(&accounts, "carol");
+        assert!(carol.allow_auto_login);
     }
 
     #[test]

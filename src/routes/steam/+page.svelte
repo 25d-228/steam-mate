@@ -167,7 +167,7 @@
   }
 
   async function switchTo(a: SteamAccount) {
-    if (a.mostRecent || switching || selMode) return;
+    if ((a.mostRecent && $steamRunning) || switching || selMode) return;
     switching = true;
     const off = offline;
     const disp = accountLabel($lang, a.personaName, a.accountName);
@@ -505,14 +505,14 @@
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="row"
-    class:is-active={a.mostRecent}
+    class:is-active={a.mostRecent && $steamRunning}
     class:child
-    class:can-switch={!a.mostRecent && !selMode}
+    class:can-switch={(!a.mostRecent || !$steamRunning) && !selMode}
     class:selectable={selMode}
     class:selected={selMode && picked}
-    title={selMode ? undefined : a.mostRecent ? undefined : $t("rowTitle")}
-    role={selMode ? "button" : a.mostRecent ? undefined : "button"}
-    tabindex={selMode ? 0 : a.mostRecent ? undefined : 0}
+    title={selMode ? undefined : a.mostRecent && $steamRunning ? undefined : $t("rowTitle")}
+    role={selMode ? "button" : a.mostRecent && $steamRunning ? undefined : "button"}
+    tabindex={selMode ? 0 : a.mostRecent && $steamRunning ? undefined : 0}
     onclick={() => selMode && toggleSel(a.accountName)}
     onkeydown={(e) =>
       selMode &&
@@ -535,7 +535,7 @@
       <div class="meta">{a.steamId64}</div>
     </div>
     <div class="end">
-      {#if a.mostRecent}
+      {#if a.mostRecent && $steamRunning}
         <span class="pill active">{$t("activePill")}</span>
       {:else}
         <span class="pill muted">{$t("dblPill")}</span>
@@ -559,15 +559,15 @@
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="card"
-    class:is-active={a.mostRecent}
+    class:is-active={a.mostRecent && $steamRunning}
     class:child-card={child}
-    class:can-switch={!a.mostRecent && !selMode}
+    class:can-switch={(!a.mostRecent || !$steamRunning) && !selMode}
     class:selectable={selMode}
     class:selected={selMode && picked}
     style={fc ? `--fc:${fc}` : undefined}
-    title={selMode ? undefined : a.mostRecent ? undefined : $t("rowTitle")}
-    role={selMode || !a.mostRecent ? "button" : undefined}
-    tabindex={selMode || !a.mostRecent ? 0 : undefined}
+    title={selMode ? undefined : a.mostRecent && $steamRunning ? undefined : $t("rowTitle")}
+    role={selMode || !a.mostRecent || !$steamRunning ? "button" : undefined}
+    tabindex={selMode || !a.mostRecent || !$steamRunning ? 0 : undefined}
     onclick={() => selMode && toggleSel(a.accountName)}
     onkeydown={(e) =>
       selMode &&
@@ -595,7 +595,7 @@
     </div>
     <div class="cname">{a.personaName}</div>
     <div class="csub">{a.accountName}</div>
-    {#if a.mostRecent}
+    {#if a.mostRecent && $steamRunning}
       <span class="pill active">{$t("activePill")}</span>
     {/if}
   </div>
