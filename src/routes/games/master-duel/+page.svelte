@@ -1,10 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { copyText } from "$lib/clipboard";
-  import { forgetAccount } from "$lib/api/steam";
+  import { forgetAccount, forgetAccounts } from "$lib/api/steam";
   import * as md from "$lib/api/games/master-duel";
-  import type { MdAccount, SteamAccount } from "$lib/api/types";
+  import type { MdAccount, SteamAccount, SeedCandidate } from "$lib/api/types";
   import { asAppError } from "$lib/api/types";
   import { save } from "@tauri-apps/plugin-dialog";
   import { t, fmt, lang, tNow, accountLabel } from "$lib/i18n";
@@ -24,15 +23,6 @@
 
   type Sort = "unlinked" | "added" | "alpha";
   type View = "list" | "card";
-
-  // A seed candidate from the backend: a profile that holds its own (un-shared)
-  // copy of the cache, with its size. Used by the create-shared-cache flow's
-  // "move an existing cache here" picker.
-  type SeedCandidate = {
-    folderId: string;
-    accountName: string;
-    sizeBytes: number;
-  };
 
   let installPath = $state<string>("");
   let accounts = $state<MdAccount[]>([]);
@@ -63,24 +53,24 @@
     return (a.steamLogin && byLogin.get(a.steamLogin)) || null;
   }
 
-  const cacheGb = $derived(
+  const cacheSizeLabel = $derived(
     cacheBytes == null
       ? "—"
       : `${(cacheBytes / 1024 / 1024 / 1024).toFixed(1)} GB`,
   );
 
-  function idx(a: MdAccount): number {
+  function orderIndex(a: MdAccount): number {
     const i = order.indexOf(a.folderId);
     return i < 0 ? 0 : i;
   }
 
   function comparator(a: MdAccount, b: MdAccount): number {
-    if (sort === "added") return idx(b) - idx(a);
+    if (sort === "added") return orderIndex(b) - orderIndex(a);
     if (sort === "alpha")
-      return (a.accountName || "").localeCompare(b.accountName || "") || idx(a) - idx(b);
+      return (a.accountName || "").localeCompare(b.accountName || "") || orderIndex(a) - orderIndex(b);
     // unlinked first (default)
     return (
-      ((a.isLinked ? 1 : 0) - (b.isLinked ? 1 : 0)) || idx(a) - idx(b)
+      ((a.isLinked ? 1 : 0) - (b.isLinked ? 1 : 0)) || orderIndex(a) - orderIndex(b)
     );
   }
 
@@ -132,7 +122,7 @@
   // ---- shared-cache existence (drives the empty state + create flow) ----
   async function checkCacheExists(): Promise<boolean> {
     try {
-      cacheExists = await invoke<boolean>("md_cache_exists");
+      cacheExists = await md.cacheExists();
     } catch {
       // leave previous value; an unknown state defaults to "exists" so the
       // normal cache box stays rather than offering a create flow on a fluke
@@ -193,7 +183,7 @@
     }
   }
 
-  async function relist() {
+  async function reloadAccountsQuietly() {
     try {
       await loadAccounts();
     } catch (e) {
@@ -220,16 +210,24 @@
     return running;
   }
 
+  // Re-probe whether the game is running and, if it is, show the "can't while
+  // running" toast. Returns true when the caller should bail — every mutating
+  // action guards on this so nothing touches the game's folders while it runs.
+  async function refuseIfRunning(): Promise<boolean> {
+    if (await checkRunning()) {
+      toast("", tNow("errRunning"), true);
+      return true;
+    }
+    return false;
+  }
+
   // ---- inline rename ----
   let editingId = $state<string | null>(null);
   let editValue = $state("");
 
   async function startEdit(a: MdAccount) {
     if (running || selMode) return;
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     editingId = a.folderId;
     editValue = a.accountName;
   }
@@ -252,10 +250,7 @@
 
   // ---- link toggle ----
   async function toggleLink(a: MdAccount, wantLinked: boolean) {
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     // No shared cache to link to — refuse and tell the user to create one first.
     if (wantLinked && cacheExists === false) {
       toast("", tNow("errNoCache"), true);
@@ -308,10 +303,7 @@
 
   // ---- link / unlink all ----
   async function linkAll() {
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     if (cacheExists === false) {
       toast("", tNow("errNoCache"), true);
       return;
@@ -332,10 +324,7 @@
   }
 
   async function unlinkAll() {
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     try {
       const n = await md.unlinkAll();
       await loadAccounts();
@@ -352,10 +341,7 @@
   let delSteam = $state<SteamAccount | null>(null);
 
   async function openDelete(a: MdAccount) {
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     delAccount = a;
     delAlsoSteam = false;
     // Only offer "also forget" when the assignment resolves to a real current
@@ -369,10 +355,7 @@
   async function confirmDelete() {
     const a = delAccount;
     if (!a) return;
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     const n = a.accountName || a.folderId;
     const both = delAlsoSteam && delSteam;
     const steamName = delSteam?.accountName;
@@ -460,10 +443,7 @@
   let delBatchAlsoSteam = $state(false);
 
   async function openDeleteBatch() {
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     if (selected.size === 0) return;
     delBatch = selectedAccounts;
     delBatchLogins = selectedLogins;
@@ -476,10 +456,7 @@
   async function confirmDeleteBatch() {
     const items = delBatch;
     if (!items || !items.length) return;
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     const logins = delBatchAlsoSteam ? delBatchLogins.slice() : [];
     closeDeleteBatch();
     try {
@@ -487,7 +464,7 @@
       // irreversible per-profile MD delete loop — the same ordering the single
       // delete uses, so a forget failure never wipes a save folder.
       if (logins.length) {
-        await invoke<void>("steam_forget_accounts", { accountNames: logins });
+        await forgetAccounts(logins);
         // The batch forget killed Steam without relaunching it — refresh both
         // the account map and the running probe.
         await refreshSteamAccounts().catch(() => {});
@@ -496,10 +473,7 @@
       // One backend call for the whole batch: one running check, one install
       // resolve, and a profile that fails is skipped and reported instead of
       // stranding the rest half-deleted.
-      const res = await invoke<{ deleted: number; failed: string[] }>(
-        "md_delete_accounts",
-        { folderIds: items.map((a) => a.folderId) },
-      );
+      const res = await md.deleteAccounts(items.map((a) => a.folderId));
       await loadAccounts();
       if (res.failed.length) {
         toast("", fmt(tNow("errBatchSkipped"), { n: res.failed.length }), true);
@@ -523,19 +497,18 @@
   let createSeedId = $state<string>("");
   let seedCandidates = $state<SeedCandidate[]>([]);
 
-  function gb(bytes: number): string {
+  function formatGb(bytes: number): string {
     return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
   }
 
   async function openCreate() {
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     try {
-      const cands = await invoke<SeedCandidate[]>("md_seed_candidates");
+      const candidates = await md.seedCandidates();
       // largest-first; defensive even if the backend already sorts
-      seedCandidates = cands.slice().sort((a, b) => b.sizeBytes - a.sizeBytes);
+      seedCandidates = candidates
+        .slice()
+        .sort((a, b) => b.sizeBytes - a.sizeBytes);
     } catch (e) {
       toastError(e);
       seedCandidates = [];
@@ -554,10 +527,7 @@
     createOpen = false;
   }
   async function confirmCreate() {
-    if (await checkRunning()) {
-      toast("", tNow("errRunning"), true);
-      return;
-    }
+    if (await refuseIfRunning()) return;
     const seed = createMode === "seed" ? createSeedId || null : null;
     const seedName =
       seed != null
@@ -568,7 +538,7 @@
         : "";
     closeCreate();
     try {
-      await invoke<void>("md_create_cache", { seed });
+      await md.createCache(seed);
       await checkCacheExists();
       // the seed profile becomes linked; re-list and refresh the size
       await loadAccounts();
@@ -593,7 +563,7 @@
   // ---- reveal shared cache in File Explorer ----
   async function revealCache() {
     try {
-      await invoke<void>("md_reveal_cache");
+      await md.revealCache();
     } catch (e) {
       toastError(e);
     }
@@ -654,7 +624,7 @@
     checkCacheExists();
     ensureSteamAccounts();
     checkRunning();
-    relist();
+    reloadAccountsQuietly();
     runningTimer = setInterval(checkRunning, 5000);
     window.addEventListener("keydown", onKeydown);
   });
@@ -711,7 +681,7 @@
         <b>{$t("cacheTitle")}</b>
         <div>{$t("cacheDesc")}</div>
       </div>
-      <span class="size">{cacheGb}</span>
+      <span class="size">{cacheSizeLabel}</span>
       <button class="btn ghost" onclick={revealCache}>{$t("revealBtn")}</button>
     </div>
   {/if}
@@ -1200,7 +1170,7 @@
             >
               {#each seedCandidates as c (c.folderId)}
                 <option value={c.folderId}
-                  >{c.accountName || c.folderId} · {gb(c.sizeBytes)}</option
+                  >{c.accountName || c.folderId} · {formatGb(c.sizeBytes)}</option
                 >
               {/each}
             </select>

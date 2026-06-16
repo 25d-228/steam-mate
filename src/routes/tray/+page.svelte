@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
   import { getCurrentWindow, Window } from "@tauri-apps/api/window";
+  import { switchAccount } from "$lib/api/steam";
+  import { appExit } from "$lib/api/app";
   import { t, setLang, type Lang } from "$lib/i18n";
   import { hue, initial } from "$lib/avatar";
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
@@ -54,7 +55,7 @@
     if (!a || a.mostRecent) return;
     switching = accountName;
     try {
-      await invoke("steam_switch_account", { accountName, offlineMode: false });
+      await switchAccount(accountName, false);
       await refreshSteamAccounts();
       refreshSteamRunning();
       // Let the main window react (chip, Steam page, etc.).
@@ -83,7 +84,7 @@
   }
 
   async function exit() {
-    await invoke("app_exit");
+    await appExit();
   }
 
   function onKeydown(e: KeyboardEvent) {

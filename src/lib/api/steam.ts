@@ -24,6 +24,11 @@ export function forgetAccount(accountName: string): Promise<void> {
   return invoke<void>("steam_forget_account", { accountName });
 }
 
+/** Forget several remembered accounts at once; resolves with how many were removed. */
+export function forgetAccounts(accountNames: string[]): Promise<number> {
+  return invoke<number>("steam_forget_accounts", { accountNames });
+}
+
 export function getAvatar(steamId64: string): Promise<string | null> {
   return invoke<string | null>("steam_get_avatar", { steamId64 });
 }

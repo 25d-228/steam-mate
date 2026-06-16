@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { copyText } from "$lib/clipboard";
   import {
@@ -9,6 +8,7 @@
     clearLogin,
     switchAccount,
     forgetAccount,
+    forgetAccounts,
   } from "$lib/api/steam";
   import type { SteamAccount } from "$lib/api/types";
   import { t, fmt, lang, tNow, accountLabel } from "$lib/i18n";
@@ -149,7 +149,7 @@
     }
   }
 
-  async function relist() {
+  async function reloadAccountsQuietly() {
     try {
       await loadAccounts();
     } catch (e) {
@@ -169,8 +169,8 @@
   async function switchTo(a: SteamAccount) {
     if ((a.mostRecent && $steamRunning) || switching || selMode) return;
     switching = true;
-    const off = offline;
-    const disp = accountLabel($lang, a.personaName, a.accountName);
+    const launchOffline = offline;
+    const accountDisplay = accountLabel($lang, a.personaName, a.accountName);
     // With Steam closed there is nothing to switch from or shut down — the
     // action is a launch, and the messages say so instead of "closing Steam".
     const launching = !$steamRunning;
@@ -183,7 +183,7 @@
       }),
     );
     try {
-      await switchAccount(a.accountName, off);
+      await switchAccount(a.accountName, launchOffline);
       await loadAccounts();
       // The switch just relaunched Steam — re-probe so the chip and tray flip
       // to "signed in" without waiting for the next interval tick.
@@ -191,8 +191,8 @@
       toast(
         "",
         fmt(tNow(launching ? "toastLaunch2" : "toastSwitch2"), {
-          a: disp,
-          off: off ? tNow("offlineSuffix") : "",
+          a: accountDisplay,
+          off: launchOffline ? tNow("offlineSuffix") : "",
         }),
       );
     } catch (e) {
@@ -213,32 +213,32 @@
   }
 
   // ---- Steam delete (hide / forget) dialog: single + batch ----
-  let sdelAccount = $state<SteamAccount | null>(null);
-  let sdelBatch = $state<string[] | null>(null);
-  let sdelMode = $state<"hide" | "forget">("hide");
+  let steamDeleteAccount = $state<SteamAccount | null>(null);
+  let steamDeleteBatch = $state<string[] | null>(null);
+  let steamDeleteMode = $state<"hide" | "forget">("hide");
 
-  function openSDelete(a: SteamAccount) {
-    sdelAccount = a;
-    sdelBatch = null;
-    sdelMode = "hide";
+  function openSteamDelete(a: SteamAccount) {
+    steamDeleteAccount = a;
+    steamDeleteBatch = null;
+    steamDeleteMode = "hide";
   }
-  function openSDeleteBatch() {
+  function openSteamDeleteBatch() {
     if (selected.size === 0) return;
-    sdelBatch = [...selected];
-    sdelAccount = null;
-    sdelMode = "hide";
+    steamDeleteBatch = [...selected];
+    steamDeleteAccount = null;
+    steamDeleteMode = "hide";
   }
-  function closeSDelete() {
-    sdelAccount = null;
-    sdelBatch = null;
+  function closeSteamDelete() {
+    steamDeleteAccount = null;
+    steamDeleteBatch = null;
   }
 
-  async function confirmSDelete() {
+  async function confirmSteamDelete() {
     // ---- batch ----
-    if (sdelBatch) {
-      const batch = sdelBatch;
-      const mode = sdelMode;
-      closeSDelete();
+    if (steamDeleteBatch) {
+      const batch = steamDeleteBatch;
+      const mode = steamDeleteMode;
+      closeSteamDelete();
       if (mode === "hide") {
         const set = new Set(hidden);
         for (const name of batch) set.add(name);
@@ -248,9 +248,7 @@
         toast("", fmt(tNow("toastHideN"), { n: batch.length }));
       } else {
         try {
-          const n = await invoke<number>("steam_forget_accounts", {
-            accountNames: batch,
-          });
+          const n = await forgetAccounts(batch);
           await loadAccounts();
           // The forget killed Steam without relaunching it — re-probe.
           refreshSteamRunning();
@@ -263,18 +261,18 @@
       return;
     }
     // ---- single ----
-    const a = sdelAccount;
+    const a = steamDeleteAccount;
     if (!a) return;
-    if (sdelMode === "hide") {
+    if (steamDeleteMode === "hide") {
       if (!hidden.includes(a.accountName)) {
         hidden = [...hidden, a.accountName];
         saveHidden();
       }
-      closeSDelete();
+      closeSteamDelete();
       toast("", fmt(tNow("toastHide"), { a: a.accountName }));
     } else {
       const name = a.accountName;
-      closeSDelete();
+      closeSteamDelete();
       try {
         await forgetAccount(name);
         await loadAccounts();
@@ -289,13 +287,13 @@
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") {
-      if (sdelAccount || sdelBatch) closeSDelete();
+      if (steamDeleteAccount || steamDeleteBatch) closeSteamDelete();
       else if (selMode) setSelMode(false);
     }
   }
 
   function onFocus() {
-    relist();
+    reloadAccountsQuietly();
   }
 
   let unlistenTray: UnlistenFn | undefined;
@@ -315,14 +313,14 @@
         toastError(e);
       }
     })();
-    relist();
+    reloadAccountsQuietly();
     window.addEventListener("focus", onFocus);
     window.addEventListener("keydown", onKeydown);
     // A tray quick-switch changes the active account while this window may
     // already be visible (no focus event fires) — re-read the list so the
     // active ring moves.
     listen("accounts-changed", () => {
-      relist();
+      reloadAccountsQuietly();
     })
       .then((un) => {
         unlistenTray = un;
@@ -408,7 +406,7 @@
       <button
         class="btn danger"
         disabled={selected.size === 0}
-        onclick={openSDeleteBatch}>{$t("delBtn")}</button
+        onclick={openSteamDeleteBatch}>{$t("delBtn")}</button
       >
       <button class="btn" onclick={() => setSelMode(false)}>{$t("cancel")}</button>
     </div>
@@ -545,7 +543,7 @@
           class="btn danger-line"
           onclick={(e) => {
             e.stopPropagation();
-            openSDelete(a);
+            openSteamDelete(a);
           }}>{$t("delBtn")}</button
         >
       {/if}
@@ -583,7 +581,7 @@
         title={$t("delBtn")}
         onclick={(e) => {
           e.stopPropagation();
-          openSDelete(a);
+          openSteamDelete(a);
         }}>⋯</button
       >
     {/if}
@@ -601,31 +599,31 @@
   </div>
 {/snippet}
 
-{#if sdelAccount || sdelBatch}
+{#if steamDeleteAccount || steamDeleteBatch}
   <div
     class="overlay"
     role="presentation"
-    onclick={(e) => e.target === e.currentTarget && closeSDelete()}
+    onclick={(e) => e.target === e.currentTarget && closeSteamDelete()}
   >
     <div class="modal" role="dialog" aria-modal="true">
-      {#if sdelBatch}
-        <h3>{fmt($t("sdelTitleN"), { n: sdelBatch.length })}</h3>
+      {#if steamDeleteBatch}
+        <h3>{fmt($t("sdelTitleN"), { n: steamDeleteBatch.length })}</h3>
         <label class="opt">
-          <input type="radio" name="sdel-mode" value="hide" bind:group={sdelMode} />
+          <input type="radio" name="sdel-mode" value="hide" bind:group={steamDeleteMode} />
           <span>
             <div class="ot">{$t("sdelHideT")}</div>
             <div class="od">{$t("sdelHideD")}</div>
           </span>
         </label>
         <label class="opt danger">
-          <input type="radio" name="sdel-mode" value="forget" bind:group={sdelMode} />
+          <input type="radio" name="sdel-mode" value="forget" bind:group={steamDeleteMode} />
           <span>
             <div class="ot">{$t("sdelForgetT")}</div>
             <div class="od">{$t("sdelForgetDN")}</div>
           </span>
         </label>
-      {:else if sdelAccount}
-        {@const a = sdelAccount}
+      {:else if steamDeleteAccount}
+        {@const a = steamDeleteAccount}
         <h3>
           {fmt($t("sdelTitle"), {
             a: a.personaName || a.accountName,
@@ -636,14 +634,14 @@
           })}
         </h3>
         <label class="opt">
-          <input type="radio" name="sdel-mode" value="hide" bind:group={sdelMode} />
+          <input type="radio" name="sdel-mode" value="hide" bind:group={steamDeleteMode} />
           <span>
             <div class="ot">{$t("sdelHideT")}</div>
             <div class="od">{$t("sdelHideD")}</div>
           </span>
         </label>
         <label class="opt danger">
-          <input type="radio" name="sdel-mode" value="forget" bind:group={sdelMode} />
+          <input type="radio" name="sdel-mode" value="forget" bind:group={steamDeleteMode} />
           <span>
             <div class="ot">{$t("sdelForgetT")}</div>
             <div class="od">{fmt($t("sdelForgetD"), { a: a.accountName })}</div>
@@ -652,8 +650,8 @@
       {/if}
       <div class="actions">
         <span class="spacer"></span>
-        <button class="btn" onclick={closeSDelete}>{$t("cancel")}</button>
-        <button class="btn danger" onclick={confirmSDelete}>{$t("removeBtn")}</button>
+        <button class="btn" onclick={closeSteamDelete}>{$t("cancel")}</button>
+        <button class="btn danger" onclick={confirmSteamDelete}>{$t("removeBtn")}</button>
       </div>
     </div>
   </div>

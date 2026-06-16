@@ -26,6 +26,17 @@ export interface MdAccount {
   hasFiles: boolean;
 }
 
+/**
+ * A profile that could seed a brand-new shared cache: it holds its own
+ * (un-shared) copy of the cache, with its size. Used by the create-shared-cache
+ * flow's "move an existing cache here" picker.
+ */
+export interface SeedCandidate {
+  folderId: string;
+  accountName: string;
+  sizeBytes: number;
+}
+
 export type AppErrorKind =
   | "SteamNotInstalled"
   | "VdfParse"
