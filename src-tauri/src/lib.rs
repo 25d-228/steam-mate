@@ -10,12 +10,6 @@ mod steam;
 #[cfg(windows)]
 mod tray;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 /// Configure plugins shared by every platform.
 ///
 /// Kept separate from command registration because `tauri::generate_handler!`
@@ -48,7 +42,7 @@ fn base_builder() -> tauri::Builder<tauri::Wry> {
 /// Windows-only registry/junction APIs (`winreg`/`junction`), so the Windows
 /// body registers them and the non-Windows body omits them; only the
 /// cross-platform `list_supported_games` (which returns an empty list off
-/// Windows) plus `greet` are shared via [`base_builder`].
+/// Windows) is registered by both bodies.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(windows)]
@@ -68,7 +62,6 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
             steam::commands::steam_get_install_path,
             steam::commands::steam_list_accounts,
             steam::commands::steam_clear_login,
@@ -101,7 +94,6 @@ pub fn run() {
 
     #[cfg(not(windows))]
     let builder = base_builder().invoke_handler(tauri::generate_handler![
-        greet,
         games::list_supported_games,
     ]);
 
