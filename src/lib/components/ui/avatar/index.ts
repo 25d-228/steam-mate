@@ -8,9 +8,4 @@ export {
 	Image,
 	Fallback,
 	Badge,
-	//
-	Root as Avatar,
-	Image as AvatarImage,
-	Fallback as AvatarFallback,
-	Badge as AvatarBadge,
 };

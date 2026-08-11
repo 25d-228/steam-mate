@@ -9,7 +9,6 @@ import MenuBadge from "./sidebar-menu-badge.svelte";
 import MenuButton from "./sidebar-menu-button.svelte";
 import MenuItem from "./sidebar-menu-item.svelte";
 import Menu from "./sidebar-menu.svelte";
-import Provider from "./sidebar-provider.svelte";
 import Separator from "./sidebar-separator.svelte";
 import Root from "./sidebar.svelte";
 
@@ -25,22 +24,6 @@ export {
 	MenuBadge,
 	MenuButton,
 	MenuItem,
-	Provider,
 	Root,
 	Separator,
-	//
-	Root as Sidebar,
-	Content as SidebarContent,
-	Footer as SidebarFooter,
-	Group as SidebarGroup,
-	GroupContent as SidebarGroupContent,
-	GroupLabel as SidebarGroupLabel,
-	Header as SidebarHeader,
-	Inset as SidebarInset,
-	Menu as SidebarMenu,
-	MenuBadge as SidebarMenuBadge,
-	MenuButton as SidebarMenuButton,
-	MenuItem as SidebarMenuItem,
-	Provider as SidebarProvider,
-	Separator as SidebarSeparator,
 };

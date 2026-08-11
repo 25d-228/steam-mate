@@ -104,7 +104,15 @@
 
   onMount(() => {
     const storedTheme = localStorage.getItem("sm-theme") as Theme | null;
-    const storedPalette = localStorage.getItem("sm-palette") as Palette | null;
+    // Builds before 0.2.2 persisted the startup default ("solarized") on every
+    // launch without the user choosing it, so a stored "solarized" carries no
+    // signal — drop it once and let the Steam default apply. From now on the
+    // value is written only on an explicit pick, so choosing Solarized sticks.
+    let storedPalette = localStorage.getItem("sm-palette") as Palette | null;
+    if (storedPalette === "solarized") {
+      localStorage.removeItem("sm-palette");
+      storedPalette = null;
+    }
     if (storedTheme) theme = storedTheme;
     if (storedPalette) palette = storedPalette;
     applyAppearance();
@@ -174,12 +182,12 @@
 {#if isTray}
   {@render children?.()}
 {:else}
-  <Sidebar.Provider
-    class="h-screen min-h-0 overflow-hidden [animation:win-in_0.45s_cubic-bezier(0.2,0.8,0.25,1)_both] motion-reduce:animate-none"
+  <div
+    data-slot="sidebar-wrapper"
+    class="flex h-screen min-h-0 w-full overflow-hidden [animation:win-in_0.45s_cubic-bezier(0.2,0.8,0.25,1)_both] motion-reduce:animate-none"
     style="--sidebar-width: 13.25rem;"
   >
     <Sidebar.Root
-      collapsible="none"
       class="border-r border-sidebar-border"
       role="navigation"
       aria-label="Primary navigation"
@@ -239,7 +247,6 @@
               <Sidebar.MenuItem>
                 <Sidebar.MenuButton
                   isActive={isSteam}
-                  tooltipContent={$t("steamTitle")}
                   class="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
                 >
                   {#snippet child({ props })}
@@ -267,9 +274,6 @@
                 <Sidebar.MenuItem>
                   <Sidebar.MenuButton
                     isActive={isGameActive(g)}
-                    tooltipContent={g.id === "master_duel"
-                      ? $t("navMd")
-                      : g.displayName}
                     class="pl-3 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
                   >
                     {#snippet child({ props })}
@@ -351,5 +355,5 @@
       theme={theme === "auto" ? "system" : theme}
       position="bottom-center"
     />
-  </Sidebar.Provider>
+  </div>
 {/if}
