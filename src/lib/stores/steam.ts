@@ -10,10 +10,10 @@ import type { SteamAccount } from "../api/types";
 
 export const steamAccounts = writable<SteamAccount[]>([]);
 
-// Whether Steam.exe is running right now. "Signed in as" claims are only
-// truthful while Steam is up — MostRecent in loginusers.vdf names the
-// auto-login target, not a live session. Defaults true so the UI doesn't
-// flash "Steam is not running" before the first probe answers.
+// Whether the platform Steam client is running right now. "Signed in as"
+// claims are only truthful while Steam is up, even though the backend also
+// reconciles current-account state. Defaults true so the UI doesn't flash
+// "Steam is not running" before the first probe answers.
 export const steamRunning = writable<boolean>(true);
 
 /** Probe the backend for a live Steam process (best effort). */

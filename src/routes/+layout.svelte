@@ -11,7 +11,6 @@
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
   import {
     steamAccounts,
-    ensureSteamAccounts,
     refreshSteamAccounts,
     steamRunning,
     refreshSteamRunning,
@@ -21,9 +20,8 @@
   let { children } = $props();
 
 
-  // MostRecent names the auto-login target; it is "signed in" only while a
-  // Steam process actually exists. With Steam closed the chip and tray must
-  // not claim anyone is signed in.
+  // The backend resolves mostRecent against platform session state. Keep the
+  // process gate too so a remembered account is never shown after Steam exits.
   const current = $derived($steamAccounts.find((a) => a.mostRecent) ?? null);
   const signedIn = $derived($steamRunning ? current : null);
 
@@ -95,6 +93,15 @@
   // How often to re-probe whether Steam is actually running.
   const RUNNING_POLL_MS = 5000;
 
+  async function refreshSteamSession() {
+    try {
+      await refreshSteamAccounts();
+    } catch {
+      /* keep the last account list */
+    }
+    await refreshSteamRunning();
+  }
+
   onMount(() => {
     const storedTheme = localStorage.getItem("sm-theme") as Theme | null;
     // Builds before 0.2.2 persisted the startup default ("solarized") on every
@@ -123,23 +130,17 @@
       }
     })();
 
-    // Populate the signed-in chip even before the Steam page is visited.
-    ensureSteamAccounts();
-
-    // Keep the "is Steam actually running" probe fresh: now, on focus, and on
-    // a slow tick — the user can open or quit Steam outside the app anytime.
-    refreshSteamRunning();
-    window.addEventListener("focus", refreshSteamRunning);
-    runTimer = setInterval(refreshSteamRunning, RUNNING_POLL_MS);
+    // Refresh the backend-derived account and process state now, on focus, and
+    // on a slow tick. The user can switch accounts or quit Steam externally.
+    refreshSteamSession();
+    window.addEventListener("focus", refreshSteamSession);
+    runTimer = setInterval(refreshSteamSession, RUNNING_POLL_MS);
 
     // The backend emits "accounts-changed" after a tray quick-switch (and any
     // other out-of-band change); refresh the shared store so the chip, tray
     // text, and Steam page all react.
     listen("accounts-changed", () => {
-      refreshSteamAccounts().catch(() => {
-        /* best-effort */
-      });
-      refreshSteamRunning();
+      refreshSteamSession();
     })
       .then((un) => {
         unlisten = un;
@@ -168,7 +169,7 @@
     // Unlike onMount, onDestroy also runs during prerender — guard the
     // window access (same pattern as the pages).
     if (typeof window !== "undefined")
-      window.removeEventListener("focus", refreshSteamRunning);
+      window.removeEventListener("focus", refreshSteamSession);
   });
 </script>
 

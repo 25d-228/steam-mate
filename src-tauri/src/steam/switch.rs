@@ -3,36 +3,9 @@
 //! synchronous; the Tauri commands run them via `spawn_blocking`.
 
 use std::fs;
-use std::io::Write;
-use std::path::Path;
 
-use super::{paths, process, registry, vdf};
+use super::{file::atomic_write, platform, vdf};
 use crate::error::{AppError, AppResult};
-
-/// Write `text` to `path` atomically: write a sibling temp file, flush it to
-/// stable storage, then rename it over the target.
-///
-/// `fs::rename` is atomic on a single volume, so a crash mid-write can't leave
-/// `loginusers.vdf` truncated — readers see either the old file or the new one.
-/// We `sync_all` the temp file before renaming so that even an OS/power-loss
-/// crash (not just a process crash) can't leave the renamed file with
-/// unflushed, zero-length contents.
-fn atomic_write(path: &Path, text: &str) -> AppResult<()> {
-    let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".steam-mate.tmp");
-    let tmp = std::path::PathBuf::from(tmp);
-
-    let mut file = fs::File::create(&tmp).map_err(|e| AppError::Io(e.to_string()))?;
-    file.write_all(text.as_bytes())
-        .map_err(|e| AppError::Io(e.to_string()))?;
-    // Flush the data to disk before the rename so the rename can't publish an
-    // empty/partial file after a power loss.
-    file.sync_all().map_err(|e| AppError::Io(e.to_string()))?;
-    drop(file);
-
-    fs::rename(&tmp, path).map_err(|e| AppError::Io(e.to_string()))?;
-    Ok(())
-}
 
 /// Rewrite Steam `config.vdf` text so `AlwaysShowUserChooser` is `"0"`.
 ///
@@ -69,7 +42,9 @@ fn set_chooser_off(config_text: &str) -> Option<String> {
 /// Steam must be stopped first, since a running client rewrites `config.vdf` on
 /// exit and would undo the change.
 fn force_auto_login() {
-    let Ok(path) = paths::config_vdf_path() else {
+    let Ok(path) =
+        platform::steam_data_dir().map(|data_dir| data_dir.join("config").join("config.vdf"))
+    else {
         return;
     };
     let Ok(text) = fs::read_to_string(&path) else {
@@ -85,7 +60,9 @@ fn force_auto_login() {
 /// Steps, strictly in order:
 pub fn switch_account(account_name: &str, offline_mode: bool) -> AppResult<()> {
     // 1. Locate and read loginusers.vdf; a missing file means Steam isn't installed.
-    let vdf_path = paths::loginusers_vdf_path()?;
+    let vdf_path = platform::steam_data_dir()?
+        .join("config")
+        .join("loginusers.vdf");
     let text = fs::read_to_string(&vdf_path).map_err(|_| AppError::SteamNotInstalled)?;
 
     // 2. Compute the new VDF text FIRST so an unknown account fails fast — before
@@ -94,9 +71,8 @@ pub fn switch_account(account_name: &str, offline_mode: bool) -> AppResult<()> {
 
     // 3. Stop Steam: it caches loginusers.vdf in memory and rewrites it on exit,
     //    so it must be down before we change the file or the registry.
-    let install = paths::get_steam_install_path()?;
-    let steam_exe = install.join("Steam.exe");
-    process::kill_steam(&steam_exe)?;
+    let steam_exe = platform::steam_executable()?;
+    platform::stop_steam(&steam_exe)?;
 
     // 3b. With Steam stopped, make sure it will auto-login the target rather than
     //     stop at the account chooser (the `AlwaysShowUserChooser=1` trap, which
@@ -107,15 +83,15 @@ pub fn switch_account(account_name: &str, offline_mode: bool) -> AppResult<()> {
     //    force-closed, so if either write fails we must still relaunch Steam
     //    before returning the error — otherwise the user is left with Steam
     //    killed and never restarted.
-    let write_result = registry::set_auto_login_user(account_name)
+    let write_result = platform::set_auto_login_user(account_name)
         .and_then(|()| atomic_write(&vdf_path, &new_text));
 
     // 6. Relaunch Steam (it auto-signs into the chosen account on success). On a
     //    write failure, surface that error but still try to bring Steam back up.
     match write_result {
-        Ok(()) => process::start_steam(&steam_exe),
+        Ok(()) => platform::start_steam(&steam_exe),
         Err(write_err) => {
-            let _ = process::start_steam(&steam_exe);
+            let _ = platform::start_steam(&steam_exe);
             Err(write_err)
         }
     }
@@ -131,7 +107,9 @@ pub fn switch_account(account_name: &str, offline_mode: bool) -> AppResult<()> {
 /// entry we just removed and make the UI's "forgotten" message false. Stopping
 /// it (like [`switch_account`] does) makes the removal stick.
 pub fn forget_account(account_name: &str) -> AppResult<()> {
-    let vdf_path = paths::loginusers_vdf_path()?;
+    let vdf_path = platform::steam_data_dir()?
+        .join("config")
+        .join("loginusers.vdf");
     let text = fs::read_to_string(&vdf_path).map_err(|_| AppError::SteamNotInstalled)?;
     // Compute the new text first so an unknown account fails fast — before we
     // kill Steam, leaving the system untouched.
@@ -139,8 +117,8 @@ pub fn forget_account(account_name: &str) -> AppResult<()> {
 
     // Stop Steam so it can't rewrite loginusers.vdf on exit and resurrect the
     // entry. No-op if Steam isn't running.
-    let install = paths::get_steam_install_path()?;
-    process::kill_steam(&install.join("Steam.exe"))?;
+    let steam_exe = platform::steam_executable()?;
+    platform::stop_steam(&steam_exe)?;
 
     atomic_write(&vdf_path, &new_text)?;
     Ok(())
@@ -168,10 +146,12 @@ pub fn forget_accounts(account_names: &[String]) -> AppResult<u32> {
     // supersede — our later write would then silently clobber Steam's (the
     // single-account forget kills first for the same reason). No-op if Steam
     // isn't running.
-    let install = paths::get_steam_install_path()?;
-    process::kill_steam(&install.join("Steam.exe"))?;
+    let steam_exe = platform::steam_executable()?;
+    platform::stop_steam(&steam_exe)?;
 
-    let vdf_path = paths::loginusers_vdf_path()?;
+    let vdf_path = platform::steam_data_dir()?
+        .join("config")
+        .join("loginusers.vdf");
     let text = fs::read_to_string(&vdf_path).map_err(|_| AppError::SteamNotInstalled)?;
 
     // Apply each removal to the running text. Skip names that aren't present;
@@ -197,9 +177,9 @@ pub fn forget_accounts(account_names: &[String]) -> AppResult<u32> {
 
     // If the auto-login user was one of the removed accounts, clear the
     // registry keys so Steam lands on the login screen instead of an orphan.
-    if let Some(active) = registry::get_auto_login_user() {
+    if let Some(active) = platform::get_auto_login_user() {
         if removed.iter().any(|name| *name == active) {
-            let _ = registry::clear_auto_login_user();
+            let _ = platform::clear_auto_login_user();
         }
     }
 

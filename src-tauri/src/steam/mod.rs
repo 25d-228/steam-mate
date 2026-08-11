@@ -1,14 +1,12 @@
-//! Steam module — account switching. Windows-only: it reads the Windows
-//! registry (`winreg`) and drives `Steam.exe`, so the whole module is gated to
-//! `#[cfg(windows)]` at the crate root.
-//! Exposes `commands` (the `#[tauri::command]` entry points) plus
-//! the internals they orchestrate.
+//! Steam account management shared by Windows and macOS.
+//!
+//! VDF parsing, avatar loading, file writes, and account orchestration stay in
+//! this module. Only host integration lives behind [`platform`].
 
 pub mod account;
 pub mod avatar;
 pub mod commands;
-pub mod paths;
-pub mod process;
-pub mod registry;
+pub mod file;
+pub mod platform;
 pub mod switch;
 pub mod vdf;
