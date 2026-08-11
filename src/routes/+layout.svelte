@@ -9,6 +9,15 @@
   import { hue, initial } from "$lib/avatar";
   import { toastError } from "$lib/errors";
   import { avatars, fetchAvatar } from "$lib/stores/avatars";
+  import * as Avatar from "$lib/components/ui/avatar/index.js";
+  import * as NativeSelect from "$lib/components/ui/native-select/index.js";
+  import * as Sidebar from "$lib/components/ui/sidebar/index.js";
+  import { Toaster } from "$lib/components/ui/sonner/index.js";
+  import Gamepad2Icon from "@lucide/svelte/icons/gamepad-2";
+  import LanguagesIcon from "@lucide/svelte/icons/languages";
+  import PaletteIcon from "@lucide/svelte/icons/palette";
+  import SunMoonIcon from "@lucide/svelte/icons/sun-moon";
+  import UsersIcon from "@lucide/svelte/icons/users";
   import {
     steamAccounts,
     ensureSteamAccounts,
@@ -16,10 +25,8 @@
     steamRunning,
     refreshSteamRunning,
   } from "$lib/stores/steam";
-  import Toast from "$lib/components/Toast.svelte";
 
   let { children } = $props();
-
 
   // MostRecent names the auto-login target; it is "signed in" only while a
   // Steam process actually exists. With Steam closed the chip and tray must
@@ -97,15 +104,7 @@
 
   onMount(() => {
     const storedTheme = localStorage.getItem("sm-theme") as Theme | null;
-    // Builds before 0.2.2 persisted the startup default ("solarized") on every
-    // launch without the user choosing it, so a stored "solarized" carries no
-    // signal — drop it once and let the Steam default apply. From now on the
-    // value is written only on an explicit pick, so choosing Solarized sticks.
-    let storedPalette = localStorage.getItem("sm-palette") as Palette | null;
-    if (storedPalette === "solarized") {
-      localStorage.removeItem("sm-palette");
-      storedPalette = null;
-    }
+    const storedPalette = localStorage.getItem("sm-palette") as Palette | null;
     if (storedTheme) theme = storedTheme;
     if (storedPalette) palette = storedPalette;
     applyAppearance();
@@ -175,131 +174,182 @@
 {#if isTray}
   {@render children?.()}
 {:else}
-  <div class="app">
-    <aside class="nav">
-    <div class="brand">
-      <span class="logo">
-        <svg viewBox="0 0 24 24"
-          ><path
-            d="M12 2a10 10 0 00-3.6 19.3c.1-1 .2-2 .5-2.6-1.6-.3-3.2-.8-3.2-3.6a2.8 2.8 0 01.8-2 2.6 2.6 0 01.1-1.9s.7-.2 2.2.8a7.6 7.6 0 014 0c1.5-1 2.2-.8 2.2-.8a2.6 2.6 0 01.1 1.9 2.8 2.8 0 01.8 2c0 2.8-1.7 3.3-3.3 3.5.3.2.5.7.5 1.5v2.5A10 10 0 0012 2z"
-          /></svg
-        >
-      </span>
-      <div>
-        <div class="name">steam-mate</div>
-        <div class="ver">v0.2.3</div>
-      </div>
-    </div>
-
-    {#if $steamRunning}
-      <div class="me" title={signedIn?.accountName ?? ""}>
-        <span
-          class="me-av"
-          style="background:{signedIn
-            ? hue(signedIn.accountName)
-            : 'var(--border)'}"
-        >
-          {#if signedIn}
-            {#if $avatars[signedIn.steamId64]}
-              <img src={$avatars[signedIn.steamId64]} alt="" />
-            {/if}
-            {initial(signedIn.personaName)}
-          {/if}
-        </span>
-        <span class="me-text">
-          <span class="me-label">{$t("signedInAs")}</span>
-          <!-- em-dash only for the running-but-no-mostRecent edge -->
-          <b>{signedIn ? signedIn.personaName : "—"}</b>
-        </span>
-      </div>
-    {/if}
-
-    <a class="nav-item" class:active={isSteam} href="/steam">
-      <span class="ico">
-        <svg viewBox="0 0 24 24"
-          ><path
-            d="M12 2a10 10 0 00-10 10 10 10 0 007 9.5l3.2-4.6a3.4 3.4 0 102.8-5.3 3.4 3.4 0 00-3 1.8l-4.6 1.9a2.6 2.6 0 100 .3zM18 11.6a2.2 2.2 0 11-2.2-2.2A2.2 2.2 0 0118 11.6z"
-          /></svg
-        >
-      </span>
-      {$t("steamTitle")}
-      <span class="dot"></span>
-    </a>
-
-    <div class="nav-label">{$t("navGames")}</div>
-    {#each games as g (g.id)}
-      <a class="nav-item sub" class:active={isGameActive(g)} href={gamePath(g)}>
-        <span class="ico">
-          <svg viewBox="0 0 24 24"
-            ><path
-              d="M7 7h10a5 5 0 015 5 4 4 0 01-7.2 2.4l-.3-.4H9.5l-.3.4A4 4 0 012 12a5 5 0 015-5zm-1 3v2H4v2h2v2h2v-2h2v-2H8v-2zm10.5 0a1.25 1.25 0 100 2.5 1.25 1.25 0 000-2.5zm-2 3a1.25 1.25 0 100 2.5 1.25 1.25 0 000-2.5z"
-            /></svg
+  <Sidebar.Provider
+    class="h-screen min-h-0 overflow-hidden [animation:win-in_0.45s_cubic-bezier(0.2,0.8,0.25,1)_both] motion-reduce:animate-none"
+    style="--sidebar-width: 13.25rem;"
+  >
+    <Sidebar.Root
+      collapsible="none"
+      class="border-r border-sidebar-border"
+      role="navigation"
+      aria-label="Primary navigation"
+    >
+      <Sidebar.Header class="gap-3 px-3 pt-3 pb-2">
+        <div class="flex items-center gap-2.5 px-1 py-1">
+          <span
+            class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-[var(--accent-2)] text-primary-foreground shadow-sm"
           >
-        </span>
-        <span>{g.id === "master_duel" ? $t("navMd") : g.displayName}</span>
-      </a>
-    {/each}
+            <UsersIcon class="size-4" aria-hidden="true" />
+          </span>
+          <span class="truncate text-sm font-bold tracking-[0.01em] text-sidebar-foreground">
+            steam-mate
+          </span>
+        </div>
 
-    <div class="lang-row first">
-      <svg class="lang-globe" viewBox="0 0 24 24"
-        ><path
-          d="M12 3a9 9 0 000 18h1.5a2.5 2.5 0 001.9-4.1 1.5 1.5 0 011.1-2.4H19a3 3 0 003-3c0-4.7-4.5-8.5-10-8.5zM6.5 12A1.5 1.5 0 118 10.5 1.5 1.5 0 016.5 12zm3-4A1.5 1.5 0 1111 6.5 1.5 1.5 0 019.5 8zm5 0A1.5 1.5 0 1116 6.5 1.5 1.5 0 0114.5 8zm3 4a1.5 1.5 0 111.5-1.5 1.5 1.5 0 01-1.5 1.5z"
-        /></svg
-      >
-      <select
-        class="lang-sel"
-        aria-label="Color"
-        value={palette}
-        onchange={onPalette}
-      >
-        <option value="steam">Steam</option>
-        <option value="solarized">Solarized</option>
-        <option value="forest">Forest</option>
-        <option value="iris">Iris</option>
-        <option value="nord">Nord</option>
-        <option value="gruvbox">Gruvbox</option>
-        <option value="rosepine">Rosé Pine</option>
-      </select>
-    </div>
-    <div class="lang-row">
-      <svg class="lang-globe" viewBox="0 0 24 24"
-        ><path d="M12.3 3a9 9 0 108.7 11.4A7.2 7.2 0 0112.3 3z" /></svg
-      >
-      <select
-        class="lang-sel"
-        aria-label="Theme"
-        value={theme}
-        onchange={onTheme}
-      >
-        <option value="auto">{$t("themeAuto")}</option>
-        <option value="light">{$t("themeLight")}</option>
-        <option value="dark">{$t("themeDark")}</option>
-      </select>
-    </div>
-    <div class="lang-row">
-      <svg class="lang-globe" viewBox="0 0 24 24"
-        ><path
-          d="M12 2a10 10 0 100 20 10 10 0 000-20zm6.9 6h-3a15.6 15.6 0 00-1.3-3.5A8 8 0 0118.9 8zM12 4a13.8 13.8 0 011.8 4h-3.6A13.8 13.8 0 0112 4zM4.3 14a8.2 8.2 0 010-4h3.4a16.8 16.8 0 000 4zm.8 2h3a15.6 15.6 0 001.3 3.5A8 8 0 015.1 16zm3-8h-3a8 8 0 014.3-3.5A15.6 15.6 0 008.1 8zM12 20a13.8 13.8 0 01-1.8-4h3.6A13.8 13.8 0 0112 20zm2.3-6H9.7a14.7 14.7 0 010-4h4.6a14.7 14.7 0 010 4zm.6 5.5a15.6 15.6 0 001.3-3.5h3a8 8 0 01-4.3 3.5zM16.3 14a16.8 16.8 0 000-4h3.4a8.2 8.2 0 010 4z"
-        /></svg
-      >
-      <select
-        class="lang-sel"
-        aria-label="Language"
-        value={$lang}
-        onchange={onLang}
-      >
-        <option value="en">English</option>
-        <option value="zh">简体中文</option>
-        <option value="zht">繁體中文</option>
-        <option value="ja">日本語</option>
-      </select>
-    </div>
-  </aside>
+        {#if $steamRunning}
+          <div
+            class="flex items-center gap-2 rounded-lg border border-sidebar-border bg-background/45 p-2"
+            title={signedIn?.accountName ?? ""}
+          >
+            <Avatar.Root size="sm" class="rounded-md">
+              {#if signedIn && $avatars[signedIn.steamId64]}
+                <Avatar.Image
+                  class="rounded-md"
+                  src={$avatars[signedIn.steamId64]}
+                  alt=""
+                />
+              {/if}
+              <Avatar.Fallback
+                class="rounded-md text-[10px] font-bold text-white"
+                style={`background: ${signedIn
+                  ? hue(signedIn.accountName)
+                  : "var(--border)"}`}
+              >
+                {signedIn ? initial(signedIn.personaName) : "—"}
+              </Avatar.Fallback>
+              <Avatar.Badge class="bg-[var(--green)]" />
+            </Avatar.Root>
+            <span class="flex min-w-0 flex-col leading-tight">
+              <span
+                class="truncate text-[9.5px] font-bold tracking-[0.08em] text-muted-foreground uppercase"
+              >{$t("signedInAs")}</span>
+              <b class="truncate text-xs text-sidebar-foreground">
+                {signedIn ? signedIn.personaName : "—"}
+              </b>
+            </span>
+          </div>
+        {/if}
+      </Sidebar.Header>
 
-  <main class="main">
-    {@render children?.()}
-  </main>
-  </div>
+      <Sidebar.Separator />
+      <Sidebar.Content>
+        <Sidebar.Group class="pt-2">
+          <Sidebar.GroupContent>
+            <Sidebar.Menu>
+              <Sidebar.MenuItem>
+                <Sidebar.MenuButton
+                  isActive={isSteam}
+                  tooltipContent={$t("steamTitle")}
+                  class="data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+                >
+                  {#snippet child({ props })}
+                    <a href="/steam" {...props}>
+                      <UsersIcon aria-hidden="true" />
+                      <span>{$t("steamTitle")}</span>
+                    </a>
+                  {/snippet}
+                </Sidebar.MenuButton>
+                <Sidebar.MenuBadge aria-hidden="true">
+                  <span
+                    class="size-1.5 rounded-full bg-[var(--green)] shadow-[0_0_0_3px_rgba(133,153,0,0.18)]"
+                  ></span>
+                </Sidebar.MenuBadge>
+              </Sidebar.MenuItem>
+            </Sidebar.Menu>
+          </Sidebar.GroupContent>
+        </Sidebar.Group>
 
-  <Toast />
+        <Sidebar.Group class="pt-0">
+          <Sidebar.GroupLabel>{$t("navGames")}</Sidebar.GroupLabel>
+          <Sidebar.GroupContent>
+            <Sidebar.Menu>
+              {#each games as g (g.id)}
+                <Sidebar.MenuItem>
+                  <Sidebar.MenuButton
+                    isActive={isGameActive(g)}
+                    tooltipContent={g.id === "master_duel"
+                      ? $t("navMd")
+                      : g.displayName}
+                    class="pl-3 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+                  >
+                    {#snippet child({ props })}
+                      <a href={gamePath(g)} {...props}>
+                        <Gamepad2Icon aria-hidden="true" />
+                        <span>
+                          {g.id === "master_duel" ? $t("navMd") : g.displayName}
+                        </span>
+                      </a>
+                    {/snippet}
+                  </Sidebar.MenuButton>
+                </Sidebar.MenuItem>
+              {/each}
+            </Sidebar.Menu>
+          </Sidebar.GroupContent>
+        </Sidebar.Group>
+      </Sidebar.Content>
+
+      <Sidebar.Separator />
+      <Sidebar.Footer class="gap-1 px-3 py-3">
+        <label class="flex items-center gap-2">
+          <PaletteIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <NativeSelect.Root
+            class="min-w-0 flex-1 w-full"
+            size="sm"
+            aria-label="Color palette"
+            value={palette}
+            onchange={onPalette}
+          >
+            <NativeSelect.Option value="steam">Steam</NativeSelect.Option>
+            <NativeSelect.Option value="solarized">Solarized</NativeSelect.Option>
+            <NativeSelect.Option value="forest">Forest</NativeSelect.Option>
+            <NativeSelect.Option value="iris">Iris</NativeSelect.Option>
+            <NativeSelect.Option value="nord">Nord</NativeSelect.Option>
+            <NativeSelect.Option value="gruvbox">Gruvbox</NativeSelect.Option>
+            <NativeSelect.Option value="rosepine">Rosé Pine</NativeSelect.Option>
+          </NativeSelect.Root>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <SunMoonIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <NativeSelect.Root
+            class="min-w-0 flex-1 w-full"
+            size="sm"
+            aria-label="Theme"
+            value={theme}
+            onchange={onTheme}
+          >
+            <NativeSelect.Option value="auto">{$t("themeAuto")}</NativeSelect.Option>
+            <NativeSelect.Option value="light">{$t("themeLight")}</NativeSelect.Option>
+            <NativeSelect.Option value="dark">{$t("themeDark")}</NativeSelect.Option>
+          </NativeSelect.Root>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <LanguagesIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <NativeSelect.Root
+            class="min-w-0 flex-1 w-full"
+            size="sm"
+            aria-label="Language"
+            value={$lang}
+            onchange={onLang}
+          >
+            <NativeSelect.Option value="en">English</NativeSelect.Option>
+            <NativeSelect.Option value="zh">简体中文</NativeSelect.Option>
+            <NativeSelect.Option value="zht">繁體中文</NativeSelect.Option>
+            <NativeSelect.Option value="ja">日本語</NativeSelect.Option>
+          </NativeSelect.Root>
+        </label>
+      </Sidebar.Footer>
+    </Sidebar.Root>
+
+    <Sidebar.Inset
+      class="shell-content h-screen min-h-0 min-w-0 overflow-auto bg-[var(--win)] px-[26px] pt-[22px] pb-[30px]"
+    >
+      {@render children?.()}
+    </Sidebar.Inset>
+    <Toaster
+      theme={theme === "auto" ? "system" : theme}
+      position="bottom-center"
+    />
+  </Sidebar.Provider>
 {/if}

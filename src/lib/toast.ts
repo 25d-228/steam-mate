@@ -1,4 +1,4 @@
-// Global two-stage toast store.
+// Global two-stage toast API, presented by the shared Sonner toaster.
 //
 // Mirrors the prototype's `toast(loading, done, isErr)`:
 //   - normal: shows `loading` with a spinner, then after ~900ms swaps to `done`
@@ -7,25 +7,10 @@
 // A loading-stage with an empty string just shows `done` directly (no spinner
 // delay) — matching the prototype calls like toast('', t('toastHide')).
 
-import { writable } from "svelte/store";
-
-export interface ToastState {
-  show: boolean;
-  /** done (final / immediate) message */
-  msg: string;
-  /** true while the spinner / loading stage is active */
-  loading: boolean;
-  err: boolean;
-}
-
-export const toastState = writable<ToastState>({
-  show: false,
-  msg: "",
-  loading: false,
-  err: false,
-});
+import { toast as sonner } from "svelte-sonner";
 
 let timer: ReturnType<typeof setTimeout> | undefined;
+const TOAST_ID = "steam-mate-global";
 
 function clear() {
   if (timer) {
@@ -43,28 +28,17 @@ function clear() {
 export function toast(loading: string, done: string, isErr = false) {
   clear();
   if (isErr) {
-    toastState.set({ show: true, msg: done, loading: false, err: true });
-    timer = setTimeout(
-      () => toastState.update((s) => ({ ...s, show: false })),
-      2600,
-    );
+    sonner.error(done, { id: TOAST_ID, duration: 2600 });
     return;
   }
   if (!loading) {
-    toastState.set({ show: true, msg: done, loading: false, err: false });
-    timer = setTimeout(
-      () => toastState.update((s) => ({ ...s, show: false })),
-      1700,
-    );
+    sonner.success(done, { id: TOAST_ID, duration: 1700 });
     return;
   }
-  toastState.set({ show: true, msg: loading, loading: true, err: false });
+  sonner.loading(loading, { id: TOAST_ID, duration: Infinity });
   timer = setTimeout(() => {
-    toastState.set({ show: true, msg: done, loading: false, err: false });
-    timer = setTimeout(
-      () => toastState.update((s) => ({ ...s, show: false })),
-      1700,
-    );
+    sonner.success(done, { id: TOAST_ID, duration: 1700 });
+    timer = undefined;
   }, 900);
 }
 
@@ -76,5 +50,5 @@ export function toast(loading: string, done: string, isErr = false) {
  */
 export function toastLoading(loading: string) {
   clear();
-  toastState.set({ show: true, msg: loading, loading: true, err: false });
+  sonner.loading(loading, { id: TOAST_ID, duration: Infinity });
 }
