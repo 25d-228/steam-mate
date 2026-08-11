@@ -13,6 +13,14 @@
     refreshSteamAccounts,
     refreshSteamRunning,
   } from "$lib/stores/steam";
+  import * as Avatar from "$lib/components/ui/avatar";
+  import { Badge } from "$lib/components/ui/badge";
+  import { Button } from "$lib/components/ui/button";
+  import * as Card from "$lib/components/ui/card";
+  import { Separator } from "$lib/components/ui/separator";
+  import LoaderCircleIcon from "@lucide/svelte/icons/loader-circle";
+  import PanelTopOpenIcon from "@lucide/svelte/icons/panel-top-open";
+  import PowerIcon from "@lucide/svelte/icons/power";
 
   // MostRecent names the auto-login target; it is the "signed in" account only
   // while Steam is actually running, exactly like the sidebar chip.
@@ -135,70 +143,86 @@
   });
 </script>
 
-<div class="traymenu">
-  <div class="tm-head">
+<Card.Root
+  class="h-screen w-screen gap-0 rounded-none bg-[var(--win)] py-0 ring-1 ring-border ring-inset"
+>
+  <header class="shrink-0 px-2.5 py-2 text-[11px] text-muted-foreground">
     {#if $steamRunning}
-      {$t("signedInAs")} <b>{current ? current.personaName : "—"}</b>
+      {$t("signedInAs")}
+      <strong class="font-semibold text-foreground">
+        {current ? current.personaName : "—"}
+      </strong>
     {:else}
       {$t("steamOff")}
     {/if}
-  </div>
+  </header>
 
-  <div class="tm-list">
+  <Separator />
+
+  <div class="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
     {#each $steamAccounts as a (a.accountName)}
       {@const uri = $avatars[a.steamId64]}
       {@const busy = switching === a.accountName}
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        class="tm-item"
-        class:busy
-        role={a.mostRecent ? undefined : "button"}
-        tabindex={a.mostRecent ? undefined : 0}
+      <Button
+        variant="ghost"
+        class="h-auto min-h-8 w-full justify-start gap-2 px-2.5 py-1.5 text-left text-[12.5px] font-normal text-foreground disabled:opacity-60"
+        disabled={a.mostRecent || switching !== null}
+        aria-busy={busy}
         onclick={() => switchTo(a.accountName)}
-        onkeydown={(e) =>
-          (e.key === "Enter" || e.key === " ") &&
-          (e.preventDefault(), switchTo(a.accountName))}
       >
-        <span class="mini" style="background:{hue(a.accountName)}">
+        <Avatar.Root class="size-[18px] rounded-[5px]">
           {#if uri}
-            <img src={uri} alt="" />
+            <Avatar.Image class="rounded-[5px]" src={uri} alt="" />
           {/if}
-          {initial(a.personaName)}
+          <Avatar.Fallback
+            class="rounded-[5px] text-[9px] font-bold text-white"
+            style={`background: ${hue(a.accountName)}`}
+          >
+            {initial(a.personaName)}
+          </Avatar.Fallback>
+        </Avatar.Root>
+        <span class="min-w-0 flex-1 truncate font-semibold">{a.personaName}</span>
+        <span class="shrink-0 font-mono text-[10px] text-muted-foreground">
+          {a.accountName}
         </span>
-        <span class="tm-n">{a.personaName}</span>
-        <span class="tm-a">{a.accountName}</span>
         {#if busy}
-          <span class="sp"></span>
+          <LoaderCircleIcon
+            class="ml-auto size-3 shrink-0 animate-spin text-primary motion-reduce:animate-none"
+            aria-hidden="true"
+          />
         {:else if $steamRunning && a.mostRecent}
-          <span class="on">●</span>
+          <Badge
+            class="ml-auto size-2 shrink-0 rounded-full bg-[var(--green)] p-0"
+            title={$t("signedIn")}
+          >
+            <span class="sr-only">{$t("signedIn")}</span>
+          </Badge>
         {/if}
-      </div>
+      </Button>
     {/each}
   </div>
 
-  <div class="tm-sep"></div>
+  <Separator />
 
-  <div
-    class="tm-item"
-    role="button"
-    tabindex="0"
-    onclick={openMain}
-    onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openMain())}
-  >
-    {$t("trayOpen")}
-  </div>
-  <div
-    class="tm-item"
-    role="button"
-    tabindex="0"
-    onclick={exit}
-    onkeydown={(e) =>
-      (e.key === "Enter" || e.key === " ") && (e.preventDefault(), exit())}
-  >
-    {$t("trayExit")}
-  </div>
-</div>
+  <footer class="shrink-0 px-1.5 py-1">
+    <Button
+      variant="ghost"
+      class="w-full justify-start px-2.5 text-[12.5px] font-normal"
+      onclick={openMain}
+    >
+      <PanelTopOpenIcon data-icon="inline-start" aria-hidden="true" />
+      {$t("trayOpen")}
+    </Button>
+    <Button
+      variant="ghost"
+      class="w-full justify-start px-2.5 text-[12.5px] font-normal"
+      onclick={exit}
+    >
+      <PowerIcon data-icon="inline-start" aria-hidden="true" />
+      {$t("trayExit")}
+    </Button>
+  </footer>
+</Card.Root>
 
 <style>
   /* The popup fills its own frameless window; a solid surface with a single
@@ -208,117 +232,5 @@
      backdrop's gradient. */
   :global(body) {
     background: var(--win);
-  }
-  .traymenu {
-    box-sizing: border-box;
-    width: 100vw;
-    height: 100vh;
-    background: var(--win);
-    border: 1px solid var(--border);
-    padding: 6px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .tm-head {
-    padding: 7px 10px;
-    font-size: 11px;
-    color: var(--muted);
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 4px;
-    flex: none;
-  }
-  .tm-head b {
-    color: var(--emph);
-  }
-  .tm-list {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-    padding: 2px 0;
-  }
-  .tm-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 12.5px;
-    color: var(--fg);
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  .tm-item:hover {
-    background: var(--accent-weak);
-  }
-  .tm-item.busy {
-    opacity: 0.6;
-    pointer-events: none;
-  }
-  .tm-item .mini {
-    width: 18px;
-    height: 18px;
-    border-radius: 5px;
-    position: relative;
-    overflow: hidden;
-    flex: none;
-    display: grid;
-    place-items: center;
-    color: #fff;
-    font-size: 9px;
-    font-weight: 700;
-  }
-  .tm-item .mini img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  .tm-item .tm-n {
-    color: var(--emph);
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .tm-item .tm-a {
-    color: var(--muted);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    flex: none;
-  }
-  .tm-item .on {
-    margin-left: auto;
-    color: var(--green);
-    font-size: 10px;
-    flex: none;
-  }
-  .tm-item .sp {
-    margin-left: auto;
-    flex: none;
-    width: 12px;
-    height: 12px;
-    border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: tm-spin 0.7s linear infinite;
-  }
-  @keyframes tm-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-  .tm-sep {
-    height: 1px;
-    background: var(--border);
-    margin: 5px 0;
-    flex: none;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .tm-item .sp {
-      animation: none;
-    }
   }
 </style>
