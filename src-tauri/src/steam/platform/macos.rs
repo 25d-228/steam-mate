@@ -1,6 +1,7 @@
 //! macOS Steam discovery, file-backed registry access, and process control.
 
 use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -12,6 +13,7 @@ use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, Signal, System
 
 use super::super::file::atomic_write;
 use crate::error::{AppError, AppResult};
+use crate::steam::account::SteamAccount;
 
 const STEAM_PROCESS: &str = "steam_osx";
 const STEAM_APP: &str = "Steam.app";
@@ -152,15 +154,49 @@ pub fn clear_auto_login_user() -> AppResult<()> {
     write_auto_login_user_at(&registry_path()?, "")
 }
 
+fn is_steam_process_name(name: &OsStr) -> bool {
+    name.to_str()
+        .is_some_and(|name| name.eq_ignore_ascii_case(STEAM_PROCESS))
+}
+
 pub fn is_steam_running() -> bool {
     let sys =
         System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
-    sys.processes().values().any(|process| {
-        process
-            .name()
-            .to_str()
-            .is_some_and(|name| name.eq_ignore_ascii_case(STEAM_PROCESS))
-    })
+    sys.processes()
+        .values()
+        .any(|process| is_steam_process_name(process.name()))
+}
+
+fn resolve_current_account_from_state(
+    accounts: &mut [SteamAccount],
+    steam_running: bool,
+    auto_login_user: Option<&str>,
+) {
+    let current_index =
+        steam_running
+            .then_some(auto_login_user)
+            .flatten()
+            .and_then(|account_name| {
+                accounts
+                    .iter()
+                    .position(|account| account.account_name.eq_ignore_ascii_case(account_name))
+            });
+
+    for (index, account) in accounts.iter_mut().enumerate() {
+        account.most_recent = current_index == Some(index);
+    }
+}
+
+/// Reconcile Steam's remembered accounts with the live macOS session state.
+///
+/// Recent macOS clients do not reliably mark the logged-in user with
+/// `MostRecent` in `loginusers.vdf`. While Steam is running, its file-backed
+/// `AutoLoginUser` identifies the remembered account; while Steam is stopped,
+/// no account is current.
+pub fn resolve_current_account(accounts: &mut [SteamAccount]) {
+    let steam_running = is_steam_running();
+    let auto_login_user = steam_running.then(get_auto_login_user).flatten();
+    resolve_current_account_from_state(accounts, steam_running, auto_login_user.as_deref());
 }
 
 pub fn stop_steam(steam_exe: &Path) -> AppResult<()> {
@@ -180,11 +216,7 @@ pub fn stop_steam(steam_exe: &Path) -> AppResult<()> {
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, true);
     for process in sys.processes().values() {
-        if process
-            .name()
-            .to_str()
-            .is_some_and(|name| name.eq_ignore_ascii_case(STEAM_PROCESS))
-        {
+        if is_steam_process_name(process.name()) {
             let _ = process.kill_with(Signal::Term);
         }
     }
@@ -194,11 +226,7 @@ pub fn stop_steam(steam_exe: &Path) -> AppResult<()> {
         let mut sys = System::new();
         sys.refresh_processes(ProcessesToUpdate::All, true);
         for process in sys.processes().values() {
-            if process
-                .name()
-                .to_str()
-                .is_some_and(|name| name.eq_ignore_ascii_case(STEAM_PROCESS))
-            {
+            if is_steam_process_name(process.name()) {
                 process.kill();
             }
         }
@@ -222,6 +250,7 @@ pub fn start_steam(steam_exe: &Path) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
     use std::fs;
     use std::path::Path;
 
@@ -229,9 +258,11 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        data_dir_from_home, find_install_dir, get_auto_login_user_at, read_auto_login_user,
-        set_registry_values, steam_registry, write_auto_login_user_at,
+        data_dir_from_home, find_install_dir, get_auto_login_user_at, is_steam_process_name,
+        read_auto_login_user, resolve_current_account_from_state, set_registry_values,
+        steam_registry, write_auto_login_user_at,
     };
+    use crate::steam::account::SteamAccount;
 
     const REGISTRY: &str = r#"
 "Registry"
@@ -268,6 +299,21 @@ mod tests {
         Vdf::from(keyvalues_parser::parse(text).unwrap())
     }
 
+    fn account(account_name: &str, most_recent: bool) -> SteamAccount {
+        SteamAccount {
+            account_name: account_name.to_owned(),
+            persona_name: format!("{account_name} persona"),
+            steam_id64: "76561198000000000".into(),
+            steam_id32: 39734272,
+            remember_password: true,
+            most_recent,
+            wants_offline_mode: false,
+            skip_offline_mode_warning: false,
+            allow_auto_login: true,
+            timestamp: 0,
+        }
+    }
+
     #[test]
     fn resolves_data_dir_from_injected_home() {
         let home = Path::new("/tmp/example-home");
@@ -294,6 +340,36 @@ mod tests {
         fs::create_dir_all(system_executable.parent().unwrap()).unwrap();
         fs::write(&system_executable, "").unwrap();
         assert_eq!(find_install_dir(&system, &user), Some(system_app));
+    }
+
+    #[test]
+    fn matches_only_the_macos_steam_client_process_name() {
+        assert!(is_steam_process_name(OsStr::new("steam_osx")));
+        assert!(is_steam_process_name(OsStr::new("STEAM_OSX")));
+        assert!(!is_steam_process_name(OsStr::new("steamwebhelper")));
+        assert!(!is_steam_process_name(OsStr::new("steam_osx_helper")));
+    }
+
+    #[test]
+    fn running_session_uses_auto_login_user_instead_of_raw_most_recent() {
+        let mut accounts = vec![account("old_login", true), account("current_login", false)];
+
+        resolve_current_account_from_state(&mut accounts, true, Some("CURRENT_LOGIN"));
+
+        assert!(!accounts[0].most_recent);
+        assert!(accounts[1].most_recent);
+    }
+
+    #[test]
+    fn stopped_or_unresolved_session_has_no_current_account() {
+        let mut accounts = vec![account("old_login", true), account("other_login", false)];
+
+        resolve_current_account_from_state(&mut accounts, false, Some("old_login"));
+        assert!(accounts.iter().all(|account| !account.most_recent));
+
+        accounts[0].most_recent = true;
+        resolve_current_account_from_state(&mut accounts, true, Some("missing_login"));
+        assert!(accounts.iter().all(|account| !account.most_recent));
     }
 
     #[test]

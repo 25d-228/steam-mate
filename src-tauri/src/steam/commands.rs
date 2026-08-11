@@ -6,11 +6,10 @@ use crate::error::{AppError, AppResult};
 use crate::steam::account::SteamAccount;
 use crate::steam::{avatar, platform, switch, vdf};
 
-/// Whether `Steam.exe` is currently running.
+/// Whether the platform Steam client is currently running.
 ///
-/// The frontend's "Signed in as" surfaces are only truthful while Steam is up —
-/// `MostRecent` in loginusers.vdf names the auto-login target, not a live
-/// session — so they go neutral when this returns false.
+/// The frontend's "Signed in as" surfaces are only truthful while Steam is up,
+/// so they go neutral when this returns false.
 #[tauri::command]
 pub async fn steam_is_running() -> AppResult<bool> {
     tauri::async_runtime::spawn_blocking(platform::is_steam_running)
@@ -31,16 +30,20 @@ pub async fn steam_get_install_path() -> AppResult<String> {
 /// Return the list of remembered Steam accounts from `loginusers.vdf`.
 ///
 /// Locates the file below the platform Steam data directory, reads it, and
-/// hands the text to [`vdf::parse_loginusers`]. A missing file is
-/// reported as [`AppError::SteamNotInstalled`] rather than a raw IO
-/// error so the frontend can branch on a single, named condition.
+/// hands the text to [`vdf::parse_loginusers`]. The platform layer then
+/// reconciles current-account state where Steam's raw `MostRecent` flag is not
+/// authoritative. A missing file is reported as
+/// [`AppError::SteamNotInstalled`] rather than a raw IO error so the frontend
+/// can branch on a single, named condition.
 #[tauri::command]
 pub async fn steam_list_accounts() -> AppResult<Vec<SteamAccount>> {
     let path = platform::steam_data_dir()?
         .join("config")
         .join("loginusers.vdf");
     let text = fs::read_to_string(&path).map_err(|_| AppError::SteamNotInstalled)?;
-    vdf::parse_loginusers(&text)
+    let mut accounts = vdf::parse_loginusers(&text)?;
+    platform::resolve_current_account(&mut accounts);
+    Ok(accounts)
 }
 
 /// Blank Steam's "remembered auto-login user" so the next launch lands at the

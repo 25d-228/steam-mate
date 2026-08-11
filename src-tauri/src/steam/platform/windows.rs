@@ -10,6 +10,7 @@ use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_QUERY_VALUE, KEY_
 use winreg::RegKey;
 
 use crate::error::{AppError, AppResult};
+use crate::steam::account::SteamAccount;
 
 const STEAM_PROCESS: &str = "steam.exe";
 const STEAM_REG_PATH: &str = r"Software\Valve\Steam";
@@ -63,6 +64,9 @@ pub fn clear_auto_login_user() -> AppResult<()> {
     key.set_value("AutoLoginUser", &"".to_string())
         .map_err(|e| AppError::RegistryWrite(e.to_string()))
 }
+
+/// Windows continues to use Steam's existing `MostRecent` account state.
+pub fn resolve_current_account(_accounts: &mut [SteamAccount]) {}
 
 pub fn is_steam_running() -> bool {
     let sys =
