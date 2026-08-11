@@ -2,10 +2,12 @@
 
 use serde::Serialize;
 
-/// One Steam user as stored in `loginusers.vdf`.
+/// One remembered Steam user, parsed from `loginusers.vdf`.
 ///
 /// Field names are sent as camelCase in JSON (matches the TS
-/// `SteamAccount` interface in DEV.md) via `#[serde(rename_all)]`.
+/// `SteamAccount` interface in DEV.md) via `#[serde(rename_all)]`. The platform
+/// layer may reconcile `most_recent` with live session state before returning
+/// the account to the frontend.
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SteamAccount {

@@ -55,7 +55,7 @@ fn library_roots(steam_root: &Path) -> Vec<PathBuf> {
 /// Returns the directory containing `masterduel.exe`, or
 /// `AppError::GameNotInstalled("master_duel")` if no library holds it.
 pub fn find_install() -> AppResult<PathBuf> {
-    let steam_root = crate::steam::paths::get_steam_install_path()?;
+    let steam_root = crate::steam::platform::steam_data_dir()?;
     for lib in library_roots(&steam_root) {
         let candidate = lib
             .join("steamapps")
