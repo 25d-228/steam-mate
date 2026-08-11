@@ -11,6 +11,8 @@ use std::error::Error;
 use std::ffi::c_char;
 use std::ptr;
 use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::thread::sleep;
+use std::time::Duration;
 
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Imp, NSObjectProtocol, Sel};
@@ -30,6 +32,8 @@ const MAIN_WINDOW: &str = "main";
 const TRAY_ID: &str = "macos-native-quick-switch";
 const OPEN_ID: &str = "native-open-steam-mate";
 const ACCOUNT_ID_PREFIX: &str = "native-steam-account-";
+const RELAUNCH_POLL_ATTEMPTS: usize = 80;
+const RELAUNCH_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 static CONTROLLER: OnceLock<NativeController> = OnceLock::new();
 
@@ -57,6 +61,11 @@ enum MenuEntry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MenuModel {
     entries: Vec<MenuEntry>,
+}
+
+struct AccountSnapshot {
+    accounts: Vec<SteamAccount>,
+    steam_running: bool,
 }
 
 impl MenuModel {
@@ -120,6 +129,7 @@ impl MenuModel {
 struct ControllerState {
     busy: bool,
     model: MenuModel,
+    refresh_generation: u64,
 }
 
 impl ControllerState {
@@ -134,13 +144,35 @@ impl ControllerState {
         }
         Some(action)
     }
+
+    fn start_refresh(&mut self) -> u64 {
+        self.refresh_generation = self.refresh_generation.wrapping_add(1);
+        self.refresh_generation
+    }
+
+    fn finish_refresh(
+        &mut self,
+        generation: u64,
+        snapshot: Result<AccountSnapshot, String>,
+    ) -> Option<MenuModel> {
+        if generation != self.refresh_generation {
+            return None;
+        }
+
+        let model = snapshot
+            .map(|snapshot| {
+                MenuModel::from_accounts(&snapshot.accounts, snapshot.steam_running, self.busy)
+            })
+            .unwrap_or_else(|_| self.model.with_busy(self.busy));
+        self.model = model.clone();
+        Some(model)
+    }
 }
 
 struct NativeController {
     app: AppHandle,
     tray: TrayIcon<Wry>,
     state: Mutex<ControllerState>,
-    refresh_lock: Mutex<()>,
 }
 
 impl NativeController {
@@ -148,16 +180,14 @@ impl NativeController {
         self.state.lock().unwrap_or_else(|error| error.into_inner())
     }
 
-    fn refresh_guard(&self) -> MutexGuard<'_, ()> {
-        self.refresh_lock
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-    }
-
-    fn load_model(&self, busy: bool) -> Result<MenuModel, String> {
-        let accounts = account::list_accounts().map_err(|error| error.to_string())?;
+    fn load_snapshot(&self) -> Result<AccountSnapshot, String> {
         let steam_running = platform::is_steam_running();
-        Ok(MenuModel::from_accounts(&accounts, steam_running, busy))
+        let accounts = account::list_accounts_for_running_state(steam_running)
+            .map_err(|error| error.to_string())?;
+        Ok(AccountSnapshot {
+            accounts,
+            steam_running,
+        })
     }
 
     /// Refresh the shared snapshot, optionally replacing the status-item menu.
@@ -167,18 +197,32 @@ impl NativeController {
     /// also replace the Tauri tray menu. A transient read failure keeps the
     /// last snapshot, changing only its busy availability.
     fn refresh(&self, update_tray: bool) {
-        let _refresh = self.refresh_guard();
-        let busy = self.state().busy;
-        let model = self
-            .load_model(busy)
-            .unwrap_or_else(|_| self.state().model.with_busy(busy));
-        self.state().model = model.clone();
+        let generation = self.state().start_refresh();
+        let snapshot = self.load_snapshot();
+        let applied = self.state().finish_refresh(generation, snapshot);
 
-        if update_tray {
-            if let Ok(menu) = build_tauri_menu(&self.app, &model) {
-                let _ = self.tray.set_menu(Some(menu));
-            }
+        if update_tray && applied.is_some() {
+            self.queue_tray_refresh();
         }
+    }
+
+    /// Queue all Tauri menu construction and replacement on the main thread.
+    ///
+    /// The queued task reads the newest cached model when it runs, so an older
+    /// task cannot replace the status menu with a stale snapshot. No worker
+    /// holds a serialization lock while waiting for synchronous UI work.
+    fn queue_tray_refresh(&self) {
+        let app = self.app.clone();
+        let main_thread_app = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let Some(controller) = CONTROLLER.get() else {
+                return;
+            };
+            let model = controller.cached_model();
+            if let Ok(menu) = build_tauri_menu(&main_thread_app, &model) {
+                let _ = controller.tray.set_menu(Some(menu));
+            }
+        });
     }
 
     fn cached_model(&self) -> MenuModel {
@@ -193,10 +237,7 @@ impl NativeController {
                 // Reflect the in-flight state on both surfaces before starting
                 // blocking Steam orchestration. Dock menus are rebuilt from
                 // this same cached model when next requested.
-                let model = self.cached_model();
-                if let Ok(menu) = build_tauri_menu(&self.app, &model) {
-                    let _ = self.tray.set_menu(Some(menu));
-                }
+                self.queue_tray_refresh();
 
                 let app = self.app.clone();
                 tauri::async_runtime::spawn(async move {
@@ -211,7 +252,7 @@ impl NativeController {
                         return;
                     };
                     controller.state().busy = false;
-                    controller.refresh(true);
+                    refresh_after_account_mutation(true);
                     let _ = app.emit("accounts-changed", ());
                     if let Err(error) = result {
                         let _ = app.emit("switch-error", error);
@@ -221,6 +262,40 @@ impl NativeController {
             None => {}
         }
     }
+}
+
+fn poll_until_running<P, W>(mut probe: P, mut wait: W, attempts: usize) -> bool
+where
+    P: FnMut() -> bool,
+    W: FnMut(),
+{
+    for attempt in 0..attempts {
+        if probe() {
+            return true;
+        }
+        if attempt + 1 < attempts {
+            wait();
+        }
+    }
+    false
+}
+
+fn schedule_relaunch_refresh() {
+    tauri::async_runtime::spawn(async {
+        let observed = tauri::async_runtime::spawn_blocking(|| {
+            poll_until_running(
+                platform::is_steam_running,
+                || sleep(RELAUNCH_POLL_INTERVAL),
+                RELAUNCH_POLL_ATTEMPTS,
+            )
+        })
+        .await
+        .unwrap_or(false);
+
+        if observed {
+            refresh();
+        }
+    });
 }
 
 fn focus_main_window(app: &AppHandle) {
@@ -381,9 +456,12 @@ fn install_dock_menu_hook() -> Result<(), Box<dyn Error>> {
 
 /// Build exactly one status item and install the Dock menu provider.
 pub fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
-    let initial_model = account::list_accounts()
-        .map(|accounts| MenuModel::from_accounts(&accounts, platform::is_steam_running(), false))
-        .unwrap_or_else(|_| MenuModel::empty());
+    let initial_model = {
+        let steam_running = platform::is_steam_running();
+        account::list_accounts_for_running_state(steam_running)
+            .map(|accounts| MenuModel::from_accounts(&accounts, steam_running, false))
+            .unwrap_or_else(|_| MenuModel::empty())
+    };
     let menu = build_tauri_menu(app, &initial_model)?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
@@ -408,8 +486,8 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             state: Mutex::new(ControllerState {
                 busy: false,
                 model: initial_model,
+                refresh_generation: 0,
             }),
-            refresh_lock: Mutex::new(()),
         })
         .map_err(|_| std::io::Error::other("native quick switch was initialized twice"))?;
 
@@ -420,6 +498,19 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
 pub fn refresh() {
     if let Some(controller) = CONTROLLER.get() {
         controller.refresh(true);
+    }
+}
+
+/// Refresh after a webview or native account mutation.
+///
+/// Switch attempts get an immediate truthful stopped-state update, followed by
+/// one bounded worker probe that refreshes again as soon as the relaunched
+/// Steam process becomes observable. Forget and clear-login mutations need
+/// only the immediate update.
+pub fn refresh_after_account_mutation(wait_for_relaunch: bool) {
+    refresh();
+    if wait_for_relaunch {
+        schedule_relaunch_refresh();
     }
 }
 
@@ -507,7 +598,11 @@ mod tests {
             .iter()
             .map(|entry| entry.id.clone())
             .collect();
-        let mut state = ControllerState { busy: false, model };
+        let mut state = ControllerState {
+            busy: false,
+            model,
+            refresh_generation: 0,
+        };
 
         assert_eq!(
             state.begin(&ids[0]),
@@ -537,5 +632,57 @@ mod tests {
             actions.get(&entries[1].id),
             Some(&NativeAction::Switch("exact_target".into()))
         );
+    }
+
+    #[test]
+    fn stale_refresh_completion_cannot_replace_a_newer_snapshot() {
+        let mut state = ControllerState {
+            busy: false,
+            model: MenuModel::empty(),
+            refresh_generation: 0,
+        };
+        let stale = state.start_refresh();
+        let current = state.start_refresh();
+
+        let current_model = state
+            .finish_refresh(
+                current,
+                Ok(AccountSnapshot {
+                    accounts: vec![account("current", "Current", true)],
+                    steam_running: true,
+                }),
+            )
+            .expect("latest refresh applies");
+        assert!(account_entries(&current_model)[0].checked);
+
+        assert!(state
+            .finish_refresh(
+                stale,
+                Ok(AccountSnapshot {
+                    accounts: vec![account("stale", "Stale", false)],
+                    steam_running: false,
+                }),
+            )
+            .is_none());
+        assert_eq!(account_entries(&state.model)[0].label, "Current (current)");
+    }
+
+    #[test]
+    fn relaunch_poll_stops_when_running_becomes_observable() {
+        let mut probes = 0;
+        let mut waits = 0;
+
+        let observed = poll_until_running(
+            || {
+                probes += 1;
+                probes == 3
+            },
+            || waits += 1,
+            5,
+        );
+
+        assert!(observed);
+        assert_eq!(probes, 3);
+        assert_eq!(waits, 2);
     }
 }

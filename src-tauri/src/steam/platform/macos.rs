@@ -195,6 +195,17 @@ fn resolve_current_account_from_state(
 /// no account is current.
 pub fn resolve_current_account(accounts: &mut [SteamAccount]) {
     let steam_running = is_steam_running();
+    resolve_current_account_for_running_state(accounts, steam_running);
+}
+
+/// Reconcile accounts against one caller-provided process observation.
+///
+/// The native menu snapshot also uses this same boolean for its current
+/// marker, so session resolution must not perform a second process probe.
+pub fn resolve_current_account_for_running_state(
+    accounts: &mut [SteamAccount],
+    steam_running: bool,
+) {
     let auto_login_user = steam_running.then(get_auto_login_user).flatten();
     resolve_current_account_from_state(accounts, steam_running, auto_login_user.as_deref());
 }

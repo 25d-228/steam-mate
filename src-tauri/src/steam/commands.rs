@@ -46,7 +46,10 @@ pub async fn steam_list_accounts() -> AppResult<Vec<SteamAccount>> {
 /// next start.
 #[tauri::command]
 pub async fn steam_clear_login() -> AppResult<()> {
-    platform::clear_auto_login_user()
+    let result = platform::clear_auto_login_user();
+    #[cfg(target_os = "macos")]
+    crate::macos_quick_switch::refresh_after_account_mutation(false);
+    result
 }
 
 /// Switch the active Steam account to `account_name`, optionally launching offline.
@@ -61,9 +64,17 @@ pub async fn steam_switch_account(
     offline_mode: Option<bool>,
 ) -> AppResult<()> {
     let offline = offline_mode.unwrap_or(false);
-    tauri::async_runtime::spawn_blocking(move || switch::switch_account(&account_name, offline))
-        .await
-        .map_err(|e| AppError::Io(e.to_string()))?
+    let result = match tauri::async_runtime::spawn_blocking(move || {
+        switch::switch_account(&account_name, offline)
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => Err(AppError::Io(error.to_string())),
+    };
+    #[cfg(target_os = "macos")]
+    crate::macos_quick_switch::refresh_after_account_mutation(true);
+    result
 }
 
 /// Forget (delete) a remembered Steam account from `loginusers.vdf`.
@@ -72,9 +83,16 @@ pub async fn steam_switch_account(
 /// blocking thread. A join failure maps to [`AppError::Io`].
 #[tauri::command]
 pub async fn steam_forget_account(account_name: String) -> AppResult<()> {
-    tauri::async_runtime::spawn_blocking(move || switch::forget_account(&account_name))
-        .await
-        .map_err(|e| AppError::Io(e.to_string()))?
+    let result =
+        match tauri::async_runtime::spawn_blocking(move || switch::forget_account(&account_name))
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => Err(AppError::Io(error.to_string())),
+        };
+    #[cfg(target_os = "macos")]
+    crate::macos_quick_switch::refresh_after_account_mutation(false);
+    result
 }
 
 /// Forget several remembered Steam accounts in one pass, returning the count
@@ -87,9 +105,16 @@ pub async fn steam_forget_account(account_name: String) -> AppResult<()> {
 /// user. A join failure maps to [`AppError::Io`].
 #[tauri::command]
 pub async fn steam_forget_accounts(account_names: Vec<String>) -> AppResult<u32> {
-    tauri::async_runtime::spawn_blocking(move || switch::forget_accounts(&account_names))
-        .await
-        .map_err(|e| AppError::Io(e.to_string()))?
+    let result =
+        match tauri::async_runtime::spawn_blocking(move || switch::forget_accounts(&account_names))
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => Err(AppError::Io(error.to_string())),
+        };
+    #[cfg(target_os = "macos")]
+    crate::macos_quick_switch::refresh_after_account_mutation(false);
+    result
 }
 
 /// Return a Steam account's avatar as a `data:image/jpeg;base64,...` URI, or
