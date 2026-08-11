@@ -337,9 +337,11 @@
   async function confirmForceLink() {
     const a = forceLinkAccount;
     if (!a) return;
-    // Clear first so the Alert Dialog's close event is not treated as a
-    // cancellation. Cancellation alone reloads without retrying.
+    // Clear first so explicitly closing the controlled Alert Dialog is not
+    // treated as cancellation. Cancellation alone reloads without retrying.
     forceLinkAccount = null;
+    forceLinkOpen = false;
+    if (await refuseIfRunning()) return;
     try {
       await md.linkAccount(a.folderId, true);
       await afterLink(a, true);
