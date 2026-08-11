@@ -14,7 +14,8 @@ use super::super::file::atomic_write;
 use crate::error::{AppError, AppResult};
 
 const STEAM_PROCESS: &str = "steam_osx";
-const STEAM_EXECUTABLE: &str = "Steam.app/Contents/MacOS/steam_osx";
+const STEAM_APP: &str = "Steam.app";
+const STEAM_EXECUTABLE: &str = "Contents/MacOS/steam_osx";
 
 fn data_dir_from_home(home: &Path) -> PathBuf {
     home.join("Library")
@@ -32,17 +33,21 @@ pub fn steam_data_dir() -> AppResult<PathBuf> {
         .ok_or(AppError::SteamNotInstalled)
 }
 
-fn find_executable(system_applications: &Path, user_applications: &Path) -> Option<PathBuf> {
+fn find_install_dir(system_applications: &Path, user_applications: &Path) -> Option<PathBuf> {
     [system_applications, user_applications]
         .into_iter()
-        .map(|applications| applications.join(STEAM_EXECUTABLE))
-        .find(|candidate| candidate.is_file())
+        .map(|applications| applications.join(STEAM_APP))
+        .find(|candidate| candidate.join(STEAM_EXECUTABLE).is_file())
+}
+
+pub fn steam_install_dir() -> AppResult<PathBuf> {
+    let home = dirs::home_dir().ok_or(AppError::SteamNotInstalled)?;
+    find_install_dir(Path::new("/Applications"), &home.join("Applications"))
+        .ok_or(AppError::SteamNotInstalled)
 }
 
 pub fn steam_executable() -> AppResult<PathBuf> {
-    let home = dirs::home_dir().ok_or(AppError::SteamNotInstalled)?;
-    find_executable(Path::new("/Applications"), &home.join("Applications"))
-        .ok_or(AppError::SteamNotInstalled)
+    Ok(steam_install_dir()?.join(STEAM_EXECUTABLE))
 }
 
 fn registry_path() -> AppResult<PathBuf> {
@@ -224,7 +229,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        data_dir_from_home, find_executable, get_auto_login_user_at, read_auto_login_user,
+        data_dir_from_home, find_install_dir, get_auto_login_user_at, read_auto_login_user,
         set_registry_values, steam_registry, write_auto_login_user_at,
     };
 
@@ -273,20 +278,22 @@ mod tests {
     }
 
     #[test]
-    fn resolves_executable_from_normal_application_locations() {
+    fn resolves_install_dir_from_normal_application_locations() {
         let root = tempdir().unwrap();
         let system = root.path().join("Applications");
         let user = root.path().join("home/Applications");
-        let user_executable = user.join(super::STEAM_EXECUTABLE);
+        let user_app = user.join(super::STEAM_APP);
+        let user_executable = user_app.join(super::STEAM_EXECUTABLE);
         fs::create_dir_all(user_executable.parent().unwrap()).unwrap();
         fs::write(&user_executable, "").unwrap();
 
-        assert_eq!(find_executable(&system, &user), Some(user_executable));
+        assert_eq!(find_install_dir(&system, &user), Some(user_app));
 
-        let system_executable = system.join(super::STEAM_EXECUTABLE);
+        let system_app = system.join(super::STEAM_APP);
+        let system_executable = system_app.join(super::STEAM_EXECUTABLE);
         fs::create_dir_all(system_executable.parent().unwrap()).unwrap();
         fs::write(&system_executable, "").unwrap();
-        assert_eq!(find_executable(&system, &user), Some(system_executable));
+        assert_eq!(find_install_dir(&system, &user), Some(system_app));
     }
 
     #[test]

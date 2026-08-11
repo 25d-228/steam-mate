@@ -90,7 +90,9 @@ pub fn read_accounts(path: &Path) -> AppResult<Vec<Row>> {
 fn write_all(path: &Path, rows: &[Row]) -> AppResult<()> {
     let tmp = path.with_extension("csv.tmp");
     {
-        let mut wtr = csv::WriterBuilder::new().from_path(&tmp).map_err(csv_err)?;
+        let mut wtr = csv::WriterBuilder::new()
+            .from_path(&tmp)
+            .map_err(csv_err)?;
         wtr.write_record(HEADER).map_err(csv_err)?;
         for (folder_id, account_name, steam_login) in rows {
             wtr.write_record([
@@ -177,19 +179,11 @@ mod tests {
         );
         assert_eq!(
             find("0000000000000002"),
-            Some((
-                "0000000000000002".into(),
-                "キラーチューン".into(),
-                "".into()
-            ))
+            Some(("0000000000000002".into(), "キラーチューン".into(), "".into()))
         );
         assert_eq!(
             find("0000000000000003"),
-            Some((
-                "0000000000000003".into(),
-                "Plushie".into(),
-                "plushie_login".into()
-            ))
+            Some(("0000000000000003".into(), "Plushie".into(), "plushie_login".into()))
         );
     }
 
@@ -215,10 +209,7 @@ mod tests {
         // account_type column is ignored; name still resolves by header, and
         // there is no steam_login column so the login is empty (NOT the
         // account_type value).
-        assert_eq!(
-            find("0000000000000010"),
-            Some(("鬼ガエル".into(), "".into()))
-        );
+        assert_eq!(find("0000000000000010"), Some(("鬼ガエル".into(), "".into())));
         assert_eq!(find("0000000000000011"), Some(("サブ".into(), "".into())));
     }
 
@@ -285,11 +276,7 @@ mod tests {
         set_login(&path, "fresh", "only_login").unwrap();
         assert_eq!(
             read_accounts(&path).unwrap(),
-            vec![(
-                "fresh".to_string(),
-                "".to_string(),
-                "only_login".to_string()
-            )]
+            vec![("fresh".to_string(), "".to_string(), "only_login".to_string())]
         );
     }
 
@@ -324,10 +311,7 @@ mod tests {
         let first_line = text.lines().next().unwrap();
         assert_eq!(first_line, "folder_id,account_name,steam_login");
         let rows = read_accounts(&path).unwrap();
-        let r = rows
-            .iter()
-            .find(|(id, _, _)| id == "0000000000000010")
-            .unwrap();
+        let r = rows.iter().find(|(id, _, _)| id == "0000000000000010").unwrap();
         assert_eq!(r.2, ""); // login empty, NOT "main"
     }
 }

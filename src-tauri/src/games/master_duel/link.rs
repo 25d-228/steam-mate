@@ -45,8 +45,9 @@ pub fn is_linked(acct_0000: &Path) -> AppResult<bool> {
 
 /// Whether `masterduel.exe` is currently running (case-insensitive match).
 pub fn is_running() -> bool {
-    let sys =
-        System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::new()));
+    let sys = System::new_with_specifics(
+        RefreshKind::new().with_processes(ProcessRefreshKind::new()),
+    );
     sys.processes().values().any(|p| {
         p.name()
             .to_string_lossy()
@@ -61,7 +62,12 @@ pub fn is_running() -> bool {
 /// junction this is a no-op. If it's a real directory we refuse while the game
 /// is `running` (`GameRunning`); if it holds any file and `force` is false we
 /// refuse (`JunctionFailed`); otherwise we delete it and create the junction.
-pub fn link_account(shared: &Path, acct_0000: &Path, force: bool, running: bool) -> AppResult<()> {
+pub fn link_account(
+    shared: &Path,
+    acct_0000: &Path,
+    force: bool,
+    running: bool,
+) -> AppResult<()> {
     if !shared.exists() {
         return Err(AppError::GameNotInstalled("master_duel"));
     }
@@ -440,7 +446,8 @@ mod tests {
         let local_data = dir.path().join("LocalData");
         let local_save = dir.path().join("LocalSave");
         fs::create_dir_all(&local_data).unwrap();
-        let err = delete_account(&local_data, &local_save, "nope", false).unwrap_err();
+        let err =
+            delete_account(&local_data, &local_save, "nope", false).unwrap_err();
         assert!(matches!(err, AppError::AccountNotFound(_)));
     }
 
@@ -450,7 +457,8 @@ mod tests {
         let local_data = dir.path().join("LocalData");
         let local_save = dir.path().join("LocalSave");
         fs::create_dir_all(local_data.join("id")).unwrap();
-        let err = delete_account(&local_data, &local_save, "id", true).unwrap_err();
+        let err =
+            delete_account(&local_data, &local_save, "id", true).unwrap_err();
         assert!(matches!(err, AppError::GameRunning("master_duel")));
     }
 

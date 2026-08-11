@@ -38,7 +38,9 @@ fn collect_paths(value: &Value<'_>, out: &mut Vec<PathBuf>) {
 /// tolerated — we just fall back to the root.
 fn library_roots(steam_root: &Path) -> Vec<PathBuf> {
     let mut roots = vec![steam_root.to_path_buf()];
-    let vdf_path = steam_root.join("steamapps").join("libraryfolders.vdf");
+    let vdf_path = steam_root
+        .join("steamapps")
+        .join("libraryfolders.vdf");
     if let Ok(text) = std::fs::read_to_string(&vdf_path) {
         if let Ok(partial) = keyvalues_parser::parse(&text) {
             let vdf = Vdf::from(partial);
@@ -55,7 +57,10 @@ fn library_roots(steam_root: &Path) -> Vec<PathBuf> {
 pub fn find_install() -> AppResult<PathBuf> {
     let steam_root = crate::steam::platform::steam_data_dir()?;
     for lib in library_roots(&steam_root) {
-        let candidate = lib.join("steamapps").join("common").join(INSTALL_DIR_NAME);
+        let candidate = lib
+            .join("steamapps")
+            .join("common")
+            .join(INSTALL_DIR_NAME);
         if candidate.join("masterduel.exe").exists() {
             return Ok(candidate);
         }

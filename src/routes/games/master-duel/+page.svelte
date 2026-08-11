@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { goto } from "$app/navigation";
   import { copyText } from "$lib/clipboard";
   import {
@@ -606,17 +606,21 @@
   }
 
   onMount(() => {
+    let destroyed = false;
+
     (async () => {
       // Direct navigation can reach this route even when navigation omits it.
       // Check the backend's compile-time support list before invoking any
       // Windows-only Master Duel command.
       try {
         const supported = await listSupportedGames();
+        if (destroyed) return;
         if (!supported.some((game) => game.id === "master_duel")) {
           await goto("/steam", { replaceState: true });
           return;
         }
       } catch {
+        if (destroyed) return;
         await goto("/steam", { replaceState: true });
         return;
       }
@@ -629,15 +633,22 @@
       try {
         // The game can live in any Steam library, so ask the backend for the
         // real install dir rather than assuming the primary Steam root.
-        installPath = await md.installPath();
+        const path = await md.installPath();
+        if (destroyed) return;
+        installPath = path;
       } catch {
+        if (destroyed) return;
         // pathline just stays empty
       }
       try {
-        cacheBytes = await md.cacheSize();
+        const bytes = await md.cacheSize();
+        if (destroyed) return;
+        cacheBytes = bytes;
       } catch (e) {
+        if (destroyed) return;
         toastError(e);
       }
+      if (destroyed) return;
       checkCacheExists();
       ensureSteamAccounts();
       checkRunning();
@@ -645,11 +656,12 @@
       runningTimer = setInterval(checkRunning, RUNNING_POLL_MS);
       window.addEventListener("keydown", onKeydown);
     })();
-  });
-  onDestroy(() => {
-    if (runningTimer) clearInterval(runningTimer);
-    if (typeof window !== "undefined")
+
+    return () => {
+      destroyed = true;
+      if (runningTimer) clearInterval(runningTimer);
       window.removeEventListener("keydown", onKeydown);
+    };
   });
 </script>
 

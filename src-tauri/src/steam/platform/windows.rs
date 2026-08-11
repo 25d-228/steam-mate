@@ -26,7 +26,11 @@ pub fn steam_data_dir() -> AppResult<PathBuf> {
 }
 
 pub fn steam_executable() -> AppResult<PathBuf> {
-    Ok(steam_data_dir()?.join("Steam.exe"))
+    Ok(steam_install_dir()?.join("Steam.exe"))
+}
+
+pub fn steam_install_dir() -> AppResult<PathBuf> {
+    steam_data_dir()
 }
 
 pub fn get_auto_login_user() -> Option<String> {

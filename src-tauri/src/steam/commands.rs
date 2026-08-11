@@ -20,11 +20,11 @@ pub async fn steam_is_running() -> AppResult<bool> {
 
 /// Return Steam's install directory as a string.
 ///
-/// Backed by the platform Steam data-directory discovery. Errors with
+/// Backed by the platform Steam application discovery. Errors with
 /// `AppError::SteamNotInstalled` if Steam isn't installed.
 #[tauri::command]
 pub async fn steam_get_install_path() -> AppResult<String> {
-    let path = platform::steam_data_dir()?;
+    let path = platform::steam_install_dir()?;
     Ok(path.to_string_lossy().into_owned())
 }
 
