@@ -21,7 +21,25 @@
     steamRunning,
     refreshSteamRunning,
   } from "$lib/stores/steam";
-
+  import * as Avatar from "$lib/components/ui/avatar/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Card from "$lib/components/ui/card/index.js";
+  import { Checkbox } from "$lib/components/ui/checkbox/index.js";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import { Label } from "$lib/components/ui/label/index.js";
+  import * as RadioGroup from "$lib/components/ui/radio-group/index.js";
+  import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
+  import { cn } from "$lib/utils.js";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+  import CopyIcon from "@lucide/svelte/icons/copy";
+  import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
+  import FolderIcon from "@lucide/svelte/icons/folder";
+  import LayoutGridIcon from "@lucide/svelte/icons/layout-grid";
+  import ListIcon from "@lucide/svelte/icons/list";
+  import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import Trash2Icon from "@lucide/svelte/icons/trash-2";
 
   let installPath = $state<string>("");
   let accounts = $state<SteamAccount[]>([]);
@@ -216,21 +234,38 @@
   let steamDeleteAccount = $state<SteamAccount | null>(null);
   let steamDeleteBatch = $state<string[] | null>(null);
   let steamDeleteMode = $state<"hide" | "forget">("hide");
+  let steamDeleteOpen = $state(false);
 
   function openSteamDelete(a: SteamAccount) {
     steamDeleteAccount = a;
     steamDeleteBatch = null;
     steamDeleteMode = "hide";
+    steamDeleteOpen = true;
   }
   function openSteamDeleteBatch() {
     if (selected.size === 0) return;
     steamDeleteBatch = [...selected];
     steamDeleteAccount = null;
     steamDeleteMode = "hide";
+    steamDeleteOpen = true;
   }
   function closeSteamDelete() {
+    steamDeleteOpen = false;
     steamDeleteAccount = null;
     steamDeleteBatch = null;
+  }
+
+  function onSteamDeleteOpenChange(open: boolean) {
+    if (!open) closeSteamDelete();
+  }
+
+  function activateDialogTrigger(
+    props: { onclick?: unknown; onkeydown?: unknown },
+    event: MouseEvent | KeyboardEvent,
+    handlerName: "onclick" | "onkeydown",
+  ) {
+    const handler = props[handlerName];
+    if (typeof handler === "function") handler(event);
   }
 
   async function confirmSteamDelete() {
@@ -286,10 +321,7 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      if (steamDeleteAccount || steamDeleteBatch) closeSteamDelete();
-      else if (selMode) setSelMode(false);
-    }
+    if (e.key === "Escape" && !steamDeleteOpen && selMode) setSelMode(false);
   }
 
   function onFocus() {
@@ -338,321 +370,461 @@
   });
 </script>
 
-<section class="page">
-  <h2 class="page-title">
-    <span>{$t("steamTitle")}</span>
-    <span class="count">· {accounts.length}</span>
-  </h2>
-  <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-  <p class="page-sub">{@html $t("steamSub")}</p>
+<Dialog.Root bind:open={steamDeleteOpen} onOpenChange={onSteamDeleteOpenChange}>
+  <section class="page">
+    <h2 class="page-title">
+      <span>{$t("steamTitle")}</span>
+      <span class="count">· {accounts.length}</span>
+    </h2>
+    <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+    <p class="page-sub">{@html $t("steamSub")}</p>
 
-  <div class="pathline">
-    <span>{$t("installedAt")}</span>
-    <b>{installPath}</b>
-    {#if installPath}
-      <button class="copy" onclick={() => copyPath(installPath)}>
-        <svg viewBox="0 0 24 24"
-          ><path
-            d="M16 1H4a2 2 0 00-2 2v14h2V3h12zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11z"
-          /></svg
-        ><span>{$t("copyBtn")}</span>
-      </button>
-    {/if}
-  </div>
-
-  <div class="toolbar">
-    <button class="btn" onclick={refresh}>
-      <span class="ico"
-        ><svg viewBox="0 0 24 24"
-          ><path
-            d="M17.65 6.35A8 8 0 1020 12h-2a6 6 0 11-1.76-4.24L13 11h7V4z"
-          /></svg
-        ></span
-      >
-      <span>{$t("refreshBtn")}</span>
-    </button>
-    <button class="btn ghost" onclick={clearAutoLogin}>{$t("clearLogin")}</button>
-    <span class="seg" role="group" aria-label="View">
-      <button class:active={view === "list"} onclick={() => setView("list")}
-        >☰ <span>{$t("viewList")}</span></button
-      >
-      <button class:active={view === "card"} onclick={() => setView("card")}
-        >▦ <span>{$t("viewCards")}</span></button
-      >
-    </span>
-    <button
-      class="btn"
-      class:sel-active={selMode}
-      onclick={() => setSelMode(!selMode)}>{$t("select")}</button
+    <Card.Root
+      size="sm"
+      class="mb-4 inline-flex max-w-full flex-row items-center gap-2 rounded-lg border border-border bg-muted px-2.5 py-1.5 font-mono text-[11.5px] text-muted-foreground shadow-inner"
     >
-    {#if hidden.length}
-      <button class="link" onclick={clearHidden}
-        >{fmt($t("showHidden"), { n: hidden.length })}</button
+      <span class="shrink-0">{$t("installedAt")}</span>
+      <b class="truncate font-semibold text-foreground" title={installPath}>{installPath}</b>
+      {#if installPath}
+        <Button
+          variant="outline"
+          size="xs"
+          class="ml-1 shrink-0 font-mono"
+          onclick={() => copyPath(installPath)}
+        >
+          <CopyIcon data-icon="inline-start" aria-hidden="true" />
+          <span>{$t("copyBtn")}</span>
+        </Button>
+      {/if}
+    </Card.Root>
+
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <Button variant="outline" onclick={refresh}>
+        <RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
+        <span>{$t("refreshBtn")}</span>
+      </Button>
+      <Button variant="ghost" onclick={clearAutoLogin}>{$t("clearLogin")}</Button>
+      <ToggleGroup.Root
+        type="single"
+        required
+        value={view}
+        variant="outline"
+        aria-label="View"
+        onValueChange={(value) =>
+          (value === "list" || value === "card") && setView(value)}
       >
+        <ToggleGroup.Item value="list" aria-label={$t("viewList")}>
+          <ListIcon data-icon="inline-start" aria-hidden="true" />
+          <span>{$t("viewList")}</span>
+        </ToggleGroup.Item>
+        <ToggleGroup.Item value="card" aria-label={$t("viewCards")}>
+          <LayoutGridIcon data-icon="inline-start" aria-hidden="true" />
+          <span>{$t("viewCards")}</span>
+        </ToggleGroup.Item>
+      </ToggleGroup.Root>
+      <Button
+        variant={selMode ? "secondary" : "outline"}
+        aria-pressed={selMode}
+        onclick={() => setSelMode(!selMode)}
+      >{$t("select")}</Button>
+      {#if hidden.length}
+        <Button variant="link" size="sm" onclick={clearHidden}>
+          {fmt($t("showHidden"), { n: hidden.length })}
+        </Button>
+      {/if}
+      <span class="flex-1"></span>
+      <div class="flex items-center gap-2">
+        <Checkbox id="steam-offline" bind:checked={offline} />
+        <Label for="steam-offline" class="text-[12.5px] text-foreground">
+          {$t("offlineLabel")}
+        </Label>
+      </div>
+    </div>
+
+    {#if selMode}
+      <Card.Root
+        size="sm"
+        class="mb-3.5 flex-row flex-wrap items-center gap-2 rounded-lg border border-dashed border-primary/45 bg-muted px-3 py-2"
+      >
+        <b class="text-[13px] text-foreground">
+          {fmt($t("selCount"), { n: selected.size })}
+        </b>
+        <Button variant="ghost" size="sm" onclick={selectAll}>{$t("selAll")}</Button>
+        <Button variant="ghost" size="sm" onclick={clearSel}>{$t("selNone")}</Button>
+        <span class="flex-1"></span>
+        <Dialog.Trigger disabled={selected.size === 0}>
+          {#snippet child({ props })}
+            <Button
+              {...props}
+              variant="destructive"
+              disabled={selected.size === 0}
+              onclick={(event) => {
+                openSteamDeleteBatch();
+                activateDialogTrigger(props, event, "onclick");
+              }}
+              onkeydown={(event) => {
+                if (event.key === "Enter" || event.key === " ") openSteamDeleteBatch();
+                activateDialogTrigger(props, event, "onkeydown");
+              }}
+            >
+              <Trash2Icon data-icon="inline-start" aria-hidden="true" />
+              {$t("delBtn")}
+            </Button>
+          {/snippet}
+        </Dialog.Trigger>
+        <Button variant="outline" onclick={() => setSelMode(false)}>{$t("cancel")}</Button>
+      </Card.Root>
     {/if}
-    <span class="spacer"></span>
-    <label class="check">
-      <input type="checkbox" bind:checked={offline} />
-      <span>{$t("offlineLabel")}</span>
-    </label>
-  </div>
 
-  {#if selMode}
-    <div class="batchbar">
-      <b>{fmt($t("selCount"), { n: selected.size })}</b>
-      <button class="btn ghost" onclick={selectAll}>{$t("selAll")}</button>
-      <button class="btn ghost" onclick={clearSel}>{$t("selNone")}</button>
-      <span class="spacer"></span>
-      <button
-        class="btn danger"
-        disabled={selected.size === 0}
-        onclick={openSteamDeleteBatch}>{$t("delBtn")}</button
-      >
-      <button class="btn" onclick={() => setSelMode(false)}>{$t("cancel")}</button>
-    </div>
-  {/if}
-
-  {#if view === "card"}
-    <div class="grid">
-      {#each entries as entry (("folder" in entry ? "f:" + entry.folder : "s:" + entry.single.accountName))}
-        {#if "single" in entry}
-          {@render steamCard(entry.single, false)}
-        {:else}
-          {@const open = openFolders.has(entry.folder)}
-          {@const col = hue(entry.folder)}
-          <div
-            class="card folder-card"
-            style="--fc:{col}"
-            title={$t("folderTitle")}
-            role="button"
-            tabindex="0"
-            onclick={() => toggleFolder(entry.folder)}
-            onkeydown={(e) =>
-              (e.key === "Enter" || e.key === " ") &&
-              (e.preventDefault(), toggleFolder(entry.folder))}
-          >
-            <div class="cav" style="background:{col}">
-              {initial(entry.folder)}
-            </div>
-            <div class="cname">
-              {open ? "▾" : "▸"}
-              {entry.folder}
-            </div>
-            <div class="csub">
-              {fmt($t("folderCount"), { n: entry.items.length })}
-            </div>
-          </div>
-          {#if open}
-            {#each entry.items as a (a.accountName)}
-              {@render steamCard(a, true, col)}
-            {/each}
-          {/if}
-        {/if}
-      {/each}
-    </div>
-  {:else}
-    <div class="list">
-      {#each entries as entry (("folder" in entry ? "f:" + entry.folder : "s:" + entry.single.accountName))}
-        {#if "single" in entry}
-          {@render steamRow(entry.single, false)}
-        {:else}
-          {@const open = openFolders.has(entry.folder)}
-          <div
-            class="row folder"
-            title={$t("folderTitle")}
-            role="button"
-            tabindex="0"
-            onclick={() => toggleFolder(entry.folder)}
-            onkeydown={(e) =>
-              (e.key === "Enter" || e.key === " ") &&
-              (e.preventDefault(), toggleFolder(entry.folder))}
-          >
-            <span class="chev">{open ? "▼" : "▶"}</span>
-            <div class="av stack">{initial(entry.folder)}</div>
-            <div class="who">
-              <div class="acct">{entry.folder}</div>
-              <div class="persona">
-                {fmt($t("folderCount"), { n: entry.items.length })}
+    {#if view === "card"}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(148px,1fr))] gap-2.5">
+        {#each entries as entry (("folder" in entry ? "f:" + entry.folder : "s:" + entry.single.accountName))}
+          {#if "single" in entry}
+            {@render steamCard(entry.single, false)}
+          {:else}
+            {@const open = openFolders.has(entry.folder)}
+            {@const col = hue(entry.folder)}
+            <Card.Root
+              class="cursor-pointer items-center gap-1.5 overflow-visible border px-2.5 py-4 text-center shadow-sm transition hover:-translate-y-px hover:shadow-md"
+              style={`background: color-mix(in srgb, ${col} 16%, var(--win)); border-color: color-mix(in srgb, ${col} 40%, transparent);`}
+              title={$t("folderTitle")}
+              role="button"
+              tabindex={0}
+              onclick={() => toggleFolder(entry.folder)}
+              onkeydown={(e) =>
+                (e.key === "Enter" || e.key === " ") &&
+                (e.preventDefault(), toggleFolder(entry.folder))}
+            >
+              <Avatar.Root class="size-14 rounded-xl shadow-md">
+                <Avatar.Fallback
+                  class="rounded-xl text-xl font-bold text-white"
+                  style={`background: ${col}`}
+                >{initial(entry.folder)}</Avatar.Fallback>
+              </Avatar.Root>
+              <div class="flex items-center gap-1 text-[13px] font-bold text-foreground">
+                {#if open}
+                  <ChevronDownIcon class="size-3.5" aria-hidden="true" />
+                {:else}
+                  <ChevronRightIcon class="size-3.5" aria-hidden="true" />
+                {/if}
+                <span class="break-all">{entry.folder}</span>
               </div>
-            </div>
-            <div class="end">
-              <span class="pill folder"
-                >{fmt($t("folderCount"), { n: entry.items.length })}</span
-              >
-            </div>
-          </div>
-          {#if open}
-            {#each entry.items as a (a.accountName)}
-              {@render steamRow(a, true)}
-            {/each}
+              <span class="font-mono text-[10.5px] text-muted-foreground">
+                {fmt($t("folderCount"), { n: entry.items.length })}
+              </span>
+            </Card.Root>
+            {#if open}
+              {#each entry.items as a (a.accountName)}
+                {@render steamCard(a, true, col)}
+              {/each}
+            {/if}
           {/if}
-        {/if}
-      {/each}
-    </div>
-  {/if}
+        {/each}
+      </div>
+    {:else}
+      <div class="flex flex-col gap-2">
+        {#each entries as entry (("folder" in entry ? "f:" + entry.folder : "s:" + entry.single.accountName))}
+          {#if "single" in entry}
+            {@render steamRow(entry.single, false)}
+          {:else}
+            {@const open = openFolders.has(entry.folder)}
+            <Card.Root
+              class="cursor-pointer flex-row items-center gap-3 overflow-visible border border-[rgba(108,113,196,0.35)] bg-[linear-gradient(90deg,rgba(108,113,196,0.1),rgba(108,113,196,0.02)_50%),var(--surface)] px-3.5 py-3 transition hover:-translate-y-px hover:border-[rgba(108,113,196,0.6)] hover:shadow-md"
+              title={$t("folderTitle")}
+              role="button"
+              tabindex={0}
+              onclick={() => toggleFolder(entry.folder)}
+              onkeydown={(e) =>
+                (e.key === "Enter" || e.key === " ") &&
+                (e.preventDefault(), toggleFolder(entry.folder))}
+            >
+              {#if open}
+                <ChevronDownIcon class="size-3 text-[var(--violet)]" aria-hidden="true" />
+              {:else}
+                <ChevronRightIcon class="size-3 text-[var(--violet)]" aria-hidden="true" />
+              {/if}
+              <Avatar.Root class="size-10 rounded-xl shadow-md">
+                <Avatar.Fallback class="rounded-xl bg-gradient-to-br from-[var(--violet)] to-[var(--blue)] text-[13.5px] font-bold text-white">
+                  {initial(entry.folder)}
+                </Avatar.Fallback>
+              </Avatar.Root>
+              <div class="min-w-0">
+                <div class="truncate text-sm font-bold text-foreground">{entry.folder}</div>
+                <div class="mt-px text-xs text-muted-foreground">
+                  {fmt($t("folderCount"), { n: entry.items.length })}
+                </div>
+              </div>
+              <Badge
+                variant="secondary"
+                class="ml-auto bg-[rgba(108,113,196,0.16)] text-[var(--violet)]"
+              >
+                <FolderIcon data-icon="inline-start" aria-hidden="true" />
+                {fmt($t("folderCount"), { n: entry.items.length })}
+              </Badge>
+            </Card.Root>
+            {#if open}
+              {#each entry.items as a (a.accountName)}
+                {@render steamRow(a, true)}
+              {/each}
+            {/if}
+          {/if}
+        {/each}
+      </div>
+    {/if}
 
-  <div class="legend">
-    <span><i style="background:var(--green)"></i> <span>{$t("legendActive")}</span></span>
-    <span><i style="background:var(--violet)"></i> <span>{$t("legendFolder")}</span></span>
-  </div>
-</section>
+    <div class="mt-4 flex flex-wrap gap-4 text-[11.5px] text-muted-foreground">
+      <span class="inline-flex items-center gap-1.5">
+        <i class="block size-2.5 rounded-[3px] bg-[var(--green)]"></i>
+        <span>{$t("legendActive")}</span>
+      </span>
+      <span class="inline-flex items-center gap-1.5">
+        <i class="block size-2.5 rounded-[3px] bg-[var(--violet)]"></i>
+        <span>{$t("legendFolder")}</span>
+      </span>
+    </div>
+  </section>
+
+  {#if steamDeleteAccount || steamDeleteBatch}
+    <Dialog.Content class="max-w-[min(460px,calc(100%-2rem))] gap-3 p-5">
+      <Dialog.Header>
+        <Dialog.Title>
+          {#if steamDeleteBatch}
+            {fmt($t("sdelTitleN"), { n: steamDeleteBatch.length })}
+          {:else if steamDeleteAccount}
+            {fmt($t("sdelTitle"), {
+              a: steamDeleteAccount.personaName || steamDeleteAccount.accountName,
+              p:
+                $lang === "en"
+                  ? ` (${steamDeleteAccount.accountName})`
+                  : `（${steamDeleteAccount.accountName}）`,
+            })}
+          {/if}
+        </Dialog.Title>
+        <Dialog.Description class="sr-only">
+          {steamDeleteBatch
+            ? $t("sdelForgetDN")
+            : steamDeleteAccount
+              ? fmt($t("sdelForgetD"), { a: steamDeleteAccount.accountName })
+              : ""}
+        </Dialog.Description>
+      </Dialog.Header>
+
+      <RadioGroup.Root
+        name="sdel-mode"
+        value={steamDeleteMode}
+        onValueChange={(value) => {
+          if (value === "hide" || value === "forget") steamDeleteMode = value;
+        }}
+      >
+        <Label
+          for="sdel-hide"
+          class="items-start rounded-lg border border-border p-3 transition-colors hover:border-primary/50 hover:bg-accent"
+        >
+          <RadioGroup.Item id="sdel-hide" value="hide" class="mt-0.5" />
+          <span>
+            <span class="block text-[12.5px] font-semibold text-foreground">
+              {$t("sdelHideT")}
+            </span>
+            <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+              {$t("sdelHideD")}
+            </span>
+          </span>
+        </Label>
+        <Label
+          for="sdel-forget"
+          class="items-start rounded-lg border border-border p-3 transition-colors hover:border-destructive/45 hover:bg-destructive/5"
+        >
+          <RadioGroup.Item
+            id="sdel-forget"
+            value="forget"
+            class="mt-0.5 data-checked:border-destructive data-checked:bg-destructive"
+          />
+          <span>
+            <span class="block text-[12.5px] font-semibold text-foreground">
+              {$t("sdelForgetT")}
+            </span>
+            <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+              {steamDeleteBatch
+                ? $t("sdelForgetDN")
+                : steamDeleteAccount
+                  ? fmt($t("sdelForgetD"), { a: steamDeleteAccount.accountName })
+                  : ""}
+            </span>
+          </span>
+        </Label>
+      </RadioGroup.Root>
+
+      <Dialog.Footer class="-mx-5 -mb-5 mt-1 p-4">
+        <Dialog.Close>
+          {#snippet child({ props })}
+            <Button {...props} variant="outline">{$t("cancel")}</Button>
+          {/snippet}
+        </Dialog.Close>
+        <Button variant="destructive" onclick={confirmSteamDelete}>
+          <Trash2Icon data-icon="inline-start" aria-hidden="true" />
+          {$t("removeBtn")}
+        </Button>
+      </Dialog.Footer>
+    </Dialog.Content>
+  {/if}
+</Dialog.Root>
 
 {#snippet steamRow(a: SteamAccount, child: boolean)}
   {@const uri = $avatars[a.steamId64]}
   {@const picked = selected.has(a.accountName)}
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div
-    class="row"
-    class:is-active={a.mostRecent && $steamRunning}
-    class:child
-    class:can-switch={(!a.mostRecent || !$steamRunning) && !selMode}
-    class:selectable={selMode}
-    class:selected={selMode && picked}
-    title={selMode ? undefined : a.mostRecent && $steamRunning ? undefined : $t("rowTitle")}
-    role={selMode ? "button" : a.mostRecent && $steamRunning ? undefined : "button"}
-    tabindex={selMode ? 0 : a.mostRecent && $steamRunning ? undefined : 0}
+  {@const active = a.mostRecent && $steamRunning}
+  <Card.Root
+    class={cn(
+      "relative flex-row items-center gap-3 overflow-visible border border-border px-3.5 py-3 shadow-sm transition hover:-translate-y-px hover:border-primary/45 hover:shadow-md",
+      active &&
+        "border-[rgba(133,153,0,0.5)] bg-[linear-gradient(90deg,rgba(133,153,0,0.1),rgba(133,153,0,0.03)_40%),var(--win)] before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-r-sm before:bg-[var(--green)]",
+      child &&
+        "ml-[34px] after:absolute after:-left-[19px] after:top-1/2 after:h-px after:w-[13px] after:bg-border",
+      ((!active && !selMode) || selMode) && "cursor-pointer select-none",
+      selMode && picked && "border-primary ring-2 ring-primary/25",
+    )}
+    title={selMode ? undefined : active ? undefined : $t("rowTitle")}
+    role={selMode || !active ? "button" : undefined}
+    tabindex={selMode || !active ? 0 : undefined}
     onclick={() => selMode && toggleSel(a.accountName)}
     onkeydown={(e) =>
+      e.target === e.currentTarget &&
       selMode &&
       (e.key === "Enter" || e.key === " ") &&
       (e.preventDefault(), toggleSel(a.accountName))}
     ondblclick={() => switchTo(a)}
   >
     {#if selMode}
-      <span class="selbox">✓</span>
+      <Checkbox
+        checked={picked}
+        aria-label={a.accountName}
+        onclick={(event) => event.stopPropagation()}
+        onCheckedChange={(checked) => checked !== picked && toggleSel(a.accountName)}
+      />
     {/if}
-    <div class="av" style="background:{hue(a.accountName)}">
+    <Avatar.Root class="size-10 rounded-xl shadow-md">
       {#if uri}
-        <img src={uri} alt="" />
+        <Avatar.Image class="rounded-xl" src={uri} alt="" />
       {/if}
-      {initial(a.personaName)}
-    </div>
-    <div class="who">
-      <div class="acct">{a.personaName}</div>
-      <div class="persona">{a.accountName}</div>
-      <div class="meta">{a.steamId64}</div>
-    </div>
-    <div class="end">
-      {#if a.mostRecent && $steamRunning}
-        <span class="pill active">{$t("activePill")}</span>
-      {:else}
-        <span class="pill muted">{$t("dblPill")}</span>
-      {/if}
-      {#if !selMode}
-        <button
-          class="btn danger-line"
-          onclick={(e) => {
-            e.stopPropagation();
-            openSteamDelete(a);
-          }}>{$t("delBtn")}</button
-        >
-      {/if}
-    </div>
-  </div>
-{/snippet}
-
-{#snippet steamCard(a: SteamAccount, child: boolean, fc?: string)}
-  {@const uri = $avatars[a.steamId64]}
-  {@const picked = selected.has(a.accountName)}
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div
-    class="card"
-    class:is-active={a.mostRecent && $steamRunning}
-    class:child-card={child}
-    class:can-switch={(!a.mostRecent || !$steamRunning) && !selMode}
-    class:selectable={selMode}
-    class:selected={selMode && picked}
-    style={fc ? `--fc:${fc}` : undefined}
-    title={selMode ? undefined : a.mostRecent && $steamRunning ? undefined : $t("rowTitle")}
-    role={selMode || !a.mostRecent || !$steamRunning ? "button" : undefined}
-    tabindex={selMode || !a.mostRecent || !$steamRunning ? 0 : undefined}
-    onclick={() => selMode && toggleSel(a.accountName)}
-    onkeydown={(e) =>
-      selMode &&
-      (e.key === "Enter" || e.key === " ") &&
-      (e.preventDefault(), toggleSel(a.accountName))}
-    ondblclick={() => switchTo(a)}
-  >
-    {#if selMode}
-      <span class="selbox">✓</span>
-    {:else}
-      <button
-        class="more"
-        title={$t("delBtn")}
-        onclick={(e) => {
-          e.stopPropagation();
-          openSteamDelete(a);
-        }}>⋯</button
-      >
-    {/if}
-    <div class="cav" style="background:{hue(a.accountName)}">
-      {#if uri}
-        <img src={uri} alt="" />
-      {/if}
-      {initial(a.personaName)}
-    </div>
-    <div class="cname">{a.personaName}</div>
-    <div class="csub">{a.accountName}</div>
-    {#if a.mostRecent && $steamRunning}
-      <span class="pill active">{$t("activePill")}</span>
-    {/if}
-  </div>
-{/snippet}
-
-{#if steamDeleteAccount || steamDeleteBatch}
-  <div
-    class="overlay"
-    role="presentation"
-    onclick={(e) => e.target === e.currentTarget && closeSteamDelete()}
-  >
-    <div class="modal" role="dialog" aria-modal="true">
-      {#if steamDeleteBatch}
-        <h3>{fmt($t("sdelTitleN"), { n: steamDeleteBatch.length })}</h3>
-        <label class="opt">
-          <input type="radio" name="sdel-mode" value="hide" bind:group={steamDeleteMode} />
-          <span>
-            <div class="ot">{$t("sdelHideT")}</div>
-            <div class="od">{$t("sdelHideD")}</div>
-          </span>
-        </label>
-        <label class="opt danger">
-          <input type="radio" name="sdel-mode" value="forget" bind:group={steamDeleteMode} />
-          <span>
-            <div class="ot">{$t("sdelForgetT")}</div>
-            <div class="od">{$t("sdelForgetDN")}</div>
-          </span>
-        </label>
-      {:else if steamDeleteAccount}
-        {@const a = steamDeleteAccount}
-        <h3>
-          {fmt($t("sdelTitle"), {
-            a: a.personaName || a.accountName,
-            p:
-              $lang === "en"
-                ? ` (${a.accountName})`
-                : `（${a.accountName}）`,
-          })}
-        </h3>
-        <label class="opt">
-          <input type="radio" name="sdel-mode" value="hide" bind:group={steamDeleteMode} />
-          <span>
-            <div class="ot">{$t("sdelHideT")}</div>
-            <div class="od">{$t("sdelHideD")}</div>
-          </span>
-        </label>
-        <label class="opt danger">
-          <input type="radio" name="sdel-mode" value="forget" bind:group={steamDeleteMode} />
-          <span>
-            <div class="ot">{$t("sdelForgetT")}</div>
-            <div class="od">{fmt($t("sdelForgetD"), { a: a.accountName })}</div>
-          </span>
-        </label>
-      {/if}
-      <div class="actions">
-        <span class="spacer"></span>
-        <button class="btn" onclick={closeSteamDelete}>{$t("cancel")}</button>
-        <button class="btn danger" onclick={confirmSteamDelete}>{$t("removeBtn")}</button>
+      <Avatar.Fallback
+        class="rounded-xl font-bold text-white"
+        style={`background: ${hue(a.accountName)}`}
+      >{initial(a.personaName)}</Avatar.Fallback>
+    </Avatar.Root>
+    <div class="min-w-0">
+      <div class="truncate text-sm font-bold text-foreground">{a.personaName}</div>
+      <div class="mt-px truncate text-xs text-muted-foreground">{a.accountName}</div>
+      <div class="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+        {a.steamId64}
       </div>
     </div>
-  </div>
-{/if}
+    <div class="ml-auto flex items-center gap-2.5">
+      {#if active}
+        <Badge class="bg-[rgba(133,153,0,0.16)] text-[var(--green)] ring-1 ring-[rgba(133,153,0,0.25)]">
+          {$t("activePill")}
+        </Badge>
+      {:else}
+        <Badge variant="secondary" class="text-muted-foreground">{$t("dblPill")}</Badge>
+      {/if}
+      {#if !selMode}
+        <Dialog.Trigger>
+          {#snippet child({ props })}
+            <Button
+              {...props}
+              variant="destructive"
+              onclick={(event) => {
+                event.stopPropagation();
+                openSteamDelete(a);
+                activateDialogTrigger(props, event, "onclick");
+              }}
+              onkeydown={(event) => {
+                if (event.key === "Enter" || event.key === " ") openSteamDelete(a);
+                activateDialogTrigger(props, event, "onkeydown");
+              }}
+            >{$t("delBtn")}</Button>
+          {/snippet}
+        </Dialog.Trigger>
+      {/if}
+    </div>
+  </Card.Root>
+{/snippet}
+
+{#snippet steamCard(a: SteamAccount, child: boolean, folderColor?: string)}
+  {@const uri = $avatars[a.steamId64]}
+  {@const picked = selected.has(a.accountName)}
+  {@const active = a.mostRecent && $steamRunning}
+  <Card.Root
+    class={cn(
+      "relative items-center gap-1.5 overflow-visible border border-border px-2.5 py-4 text-center shadow-sm transition hover:-translate-y-px hover:border-primary/45 hover:shadow-md",
+      active && "border-[rgba(133,153,0,0.55)] ring-2 ring-[rgba(133,153,0,0.22)]",
+      child && "border-[color:color-mix(in_srgb,var(--folder-color)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--folder-color)_10%,var(--win))]",
+      ((!active && !selMode) || selMode) && "cursor-pointer select-none",
+      selMode && picked && "border-primary ring-2 ring-primary/25",
+    )}
+    style={folderColor ? `--folder-color: ${folderColor}` : undefined}
+    title={selMode ? undefined : active ? undefined : $t("rowTitle")}
+    role={selMode || !active ? "button" : undefined}
+    tabindex={selMode || !active ? 0 : undefined}
+    onclick={() => selMode && toggleSel(a.accountName)}
+    onkeydown={(e) =>
+      e.target === e.currentTarget &&
+      selMode &&
+      (e.key === "Enter" || e.key === " ") &&
+      (e.preventDefault(), toggleSel(a.accountName))}
+    ondblclick={() => switchTo(a)}
+  >
+    {#if selMode}
+      <Checkbox
+        class="absolute top-2 left-2"
+        checked={picked}
+        aria-label={a.accountName}
+        onclick={(event) => event.stopPropagation()}
+        onCheckedChange={(checked) => checked !== picked && toggleSel(a.accountName)}
+      />
+    {:else}
+      <Dialog.Trigger>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="ghost"
+            size="icon-xs"
+            class="absolute top-1.5 right-1.5 text-muted-foreground"
+            title={$t("delBtn")}
+            aria-label={$t("delBtn")}
+            onclick={(event) => {
+              event.stopPropagation();
+              openSteamDelete(a);
+              activateDialogTrigger(props, event, "onclick");
+            }}
+            onkeydown={(event) => {
+              if (event.key === "Enter" || event.key === " ") openSteamDelete(a);
+              activateDialogTrigger(props, event, "onkeydown");
+            }}
+          >
+            <EllipsisIcon aria-hidden="true" />
+          </Button>
+        {/snippet}
+      </Dialog.Trigger>
+    {/if}
+    <Avatar.Root class="size-14 rounded-xl shadow-md">
+      {#if uri}
+        <Avatar.Image class="rounded-xl" src={uri} alt="" />
+      {/if}
+      <Avatar.Fallback
+        class="rounded-xl text-xl font-bold text-white"
+        style={`background: ${hue(a.accountName)}`}
+      >{initial(a.personaName)}</Avatar.Fallback>
+    </Avatar.Root>
+    <div class="break-all text-[13px] leading-tight font-bold text-foreground">
+      {a.personaName}
+    </div>
+    <div class="break-all font-mono text-[10.5px] text-muted-foreground">
+      {a.accountName}
+    </div>
+    {#if active}
+      <Badge class="bg-[rgba(133,153,0,0.16)] text-[var(--green)] ring-1 ring-[rgba(133,153,0,0.25)]">
+        {$t("activePill")}
+      </Badge>
+    {/if}
+  </Card.Root>
+{/snippet}
