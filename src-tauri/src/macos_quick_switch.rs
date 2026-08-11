@@ -68,6 +68,11 @@ struct AccountSnapshot {
     steam_running: bool,
 }
 
+struct RefreshCompletion {
+    model: MenuModel,
+    update_tray: bool,
+}
+
 impl MenuModel {
     fn empty() -> Self {
         Self {
@@ -130,6 +135,7 @@ struct ControllerState {
     busy: bool,
     model: MenuModel,
     refresh_generation: u64,
+    pending_tray_update: bool,
 }
 
 impl ControllerState {
@@ -145,8 +151,9 @@ impl ControllerState {
         Some(action)
     }
 
-    fn start_refresh(&mut self) -> u64 {
+    fn start_refresh(&mut self, update_tray: bool) -> u64 {
         self.refresh_generation = self.refresh_generation.wrapping_add(1);
+        self.pending_tray_update |= update_tray;
         self.refresh_generation
     }
 
@@ -154,18 +161,25 @@ impl ControllerState {
         &mut self,
         generation: u64,
         snapshot: Result<AccountSnapshot, String>,
-    ) -> Option<MenuModel> {
-        if generation != self.refresh_generation {
-            return None;
-        }
-
+    ) -> RefreshCompletion {
         let model = snapshot
             .map(|snapshot| {
                 MenuModel::from_accounts(&snapshot.accounts, snapshot.steam_running, self.busy)
             })
             .unwrap_or_else(|_| self.model.with_busy(self.busy));
+
+        if generation != self.refresh_generation {
+            return RefreshCompletion {
+                model,
+                update_tray: false,
+            };
+        }
+
         self.model = model.clone();
-        Some(model)
+        RefreshCompletion {
+            model,
+            update_tray: std::mem::take(&mut self.pending_tray_update),
+        }
     }
 }
 
@@ -196,14 +210,15 @@ impl NativeController {
     /// model only and build the returned Dock menu directly. Other refreshes
     /// also replace the Tauri tray menu. A transient read failure keeps the
     /// last snapshot, changing only its busy availability.
-    fn refresh(&self, update_tray: bool) {
-        let generation = self.state().start_refresh();
+    fn refresh(&self, update_tray: bool) -> MenuModel {
+        let generation = self.state().start_refresh(update_tray);
         let snapshot = self.load_snapshot();
-        let applied = self.state().finish_refresh(generation, snapshot);
+        let completion = self.state().finish_refresh(generation, snapshot);
 
-        if update_tray && applied.is_some() {
+        if completion.update_tray {
             self.queue_tray_refresh();
         }
+        completion.model
     }
 
     /// Queue all Tauri menu construction and replacement on the main thread.
@@ -408,8 +423,8 @@ unsafe extern "C-unwind" fn application_dock_menu(
     let Some(controller) = CONTROLLER.get() else {
         return ptr::null_mut();
     };
-    controller.refresh(false);
-    Retained::autorelease_ptr(build_dock_menu(&controller.cached_model(), mtm))
+    let model = controller.refresh(false);
+    Retained::autorelease_ptr(build_dock_menu(&model, mtm))
 }
 
 /// Add only the missing public Dock-menu selector to Tauri's delegate class.
@@ -487,6 +502,7 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
                 busy: false,
                 model: initial_model,
                 refresh_generation: 0,
+                pending_tray_update: false,
             }),
         })
         .map_err(|_| std::io::Error::other("native quick switch was initialized twice"))?;
@@ -602,6 +618,7 @@ mod tests {
             busy: false,
             model,
             refresh_generation: 0,
+            pending_tray_update: false,
         };
 
         assert_eq!(
@@ -635,36 +652,75 @@ mod tests {
     }
 
     #[test]
-    fn stale_refresh_completion_cannot_replace_a_newer_snapshot() {
+    fn later_dock_refresh_preserves_pending_tray_update() {
         let mut state = ControllerState {
             busy: false,
             model: MenuModel::empty(),
             refresh_generation: 0,
+            pending_tray_update: false,
         };
-        let stale = state.start_refresh();
-        let current = state.start_refresh();
+        let tray = state.start_refresh(true);
+        let dock = state.start_refresh(false);
 
-        let current_model = state
-            .finish_refresh(
-                current,
-                Ok(AccountSnapshot {
-                    accounts: vec![account("current", "Current", true)],
-                    steam_running: true,
-                }),
-            )
-            .expect("latest refresh applies");
-        assert!(account_entries(&current_model)[0].checked);
+        let dock_completion = state.finish_refresh(
+            dock,
+            Ok(AccountSnapshot {
+                accounts: vec![account("dock", "Dock", true)],
+                steam_running: true,
+            }),
+        );
+        assert!(dock_completion.update_tray);
+        assert_eq!(
+            account_entries(&dock_completion.model)[0].label,
+            "Dock (dock)"
+        );
 
-        assert!(state
-            .finish_refresh(
-                stale,
-                Ok(AccountSnapshot {
-                    accounts: vec![account("stale", "Stale", false)],
-                    steam_running: false,
-                }),
-            )
-            .is_none());
-        assert_eq!(account_entries(&state.model)[0].label, "Current (current)");
+        let tray_completion = state.finish_refresh(
+            tray,
+            Ok(AccountSnapshot {
+                accounts: vec![account("tray", "Tray", false)],
+                steam_running: false,
+            }),
+        );
+        assert!(!tray_completion.update_tray);
+        assert_eq!(account_entries(&state.model)[0].label, "Dock (dock)");
+    }
+
+    #[test]
+    fn superseded_dock_refresh_keeps_its_presentation_snapshot() {
+        let mut state = ControllerState {
+            busy: false,
+            model: MenuModel::empty(),
+            refresh_generation: 0,
+            pending_tray_update: false,
+        };
+        let dock = state.start_refresh(false);
+        let tray = state.start_refresh(true);
+
+        let dock_completion = state.finish_refresh(
+            dock,
+            Ok(AccountSnapshot {
+                accounts: vec![account("dock", "Dock", true)],
+                steam_running: true,
+            }),
+        );
+        assert!(!dock_completion.update_tray);
+        assert_eq!(
+            account_entries(&dock_completion.model)[0].label,
+            "Dock (dock)"
+        );
+        assert!(account_entries(&dock_completion.model)[0].checked);
+        assert!(account_entries(&state.model).is_empty());
+
+        let tray_completion = state.finish_refresh(
+            tray,
+            Ok(AccountSnapshot {
+                accounts: vec![account("tray", "Tray", false)],
+                steam_running: false,
+            }),
+        );
+        assert!(tray_completion.update_tray);
+        assert_eq!(account_entries(&state.model)[0].label, "Tray (tray)");
     }
 
     #[test]
