@@ -24,7 +24,33 @@
     steamRunning,
     refreshSteamRunning,
   } from "$lib/stores/steam";
-
+  import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
+  import * as Avatar from "$lib/components/ui/avatar/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as Card from "$lib/components/ui/card/index.js";
+  import { Checkbox } from "$lib/components/ui/checkbox/index.js";
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
+  import { Label } from "$lib/components/ui/label/index.js";
+  import * as NativeSelect from "$lib/components/ui/native-select/index.js";
+  import * as RadioGroup from "$lib/components/ui/radio-group/index.js";
+  import { Switch } from "$lib/components/ui/switch/index.js";
+  import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
+  import { cn } from "$lib/utils.js";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+  import CopyIcon from "@lucide/svelte/icons/copy";
+  import DatabaseIcon from "@lucide/svelte/icons/database";
+  import EllipsisIcon from "@lucide/svelte/icons/ellipsis";
+  import FolderIcon from "@lucide/svelte/icons/folder";
+  import FolderOpenIcon from "@lucide/svelte/icons/folder-open";
+  import LayoutGridIcon from "@lucide/svelte/icons/layout-grid";
+  import ListIcon from "@lucide/svelte/icons/list";
+  import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import Trash2Icon from "@lucide/svelte/icons/trash-2";
+  import TriangleAlertIcon from "@lucide/svelte/icons/triangle-alert";
+  import UploadIcon from "@lucide/svelte/icons/upload";
 
   type Sort = "unlinked" | "added" | "alpha";
   type View = "list" | "card";
@@ -253,7 +279,20 @@
     }
   }
 
-  // ---- link toggle ----
+  // ---- link toggle + forced-link confirmation ----
+  let forceLinkOpen = $state(false);
+  let forceLinkAccount = $state<MdAccount | null>(null);
+
+  const forceLinkMessage = $derived(
+    forceLinkAccount
+      ? fmt($t("confirmForce"), { id: forceLinkAccount.folderId })
+      : "",
+  );
+  const forceLinkTitle = $derived(forceLinkMessage.split("\n\n")[0] ?? "");
+  const forceLinkDescription = $derived(
+    forceLinkMessage.split("\n\n").slice(1).join("\n\n"),
+  );
+
   async function toggleLink(a: MdAccount, wantLinked: boolean) {
     if (await refuseIfRunning()) return;
     // No shared cache to link to — refuse and tell the user to create one first.
@@ -269,18 +308,8 @@
       } catch (e) {
         const err = asAppError(e);
         if (err.kind === "JunctionFailed" && /file/i.test(err.msg ?? "")) {
-          const ok = confirm(fmt(tNow("confirmForce"), { id: a.folderId }));
-          if (!ok) {
-            await loadAccounts();
-            return;
-          }
-          try {
-            await md.linkAccount(a.folderId, true);
-            await afterLink(a, true);
-          } catch (e2) {
-            toastError(e2);
-            await loadAccounts();
-          }
+          forceLinkAccount = a;
+          forceLinkOpen = true;
         } else {
           toastError(e);
           await loadAccounts();
@@ -294,6 +323,31 @@
         toastError(e);
         await loadAccounts();
       }
+    }
+  }
+
+  function onForceLinkOpenChange(open: boolean) {
+    if (open) return;
+    forceLinkOpen = false;
+    if (!forceLinkAccount) return;
+    forceLinkAccount = null;
+    loadAccounts().catch(toastError);
+  }
+
+  async function confirmForceLink() {
+    const a = forceLinkAccount;
+    if (!a) return;
+    // Clear first so explicitly closing the controlled Alert Dialog is not
+    // treated as cancellation. Cancellation alone reloads without retrying.
+    forceLinkAccount = null;
+    forceLinkOpen = false;
+    if (await refuseIfRunning()) return;
+    try {
+      await md.linkAccount(a.folderId, true);
+      await afterLink(a, true);
+    } catch (e) {
+      toastError(e);
+      await loadAccounts();
     }
   }
 
@@ -344,18 +398,46 @@
   let delAccount = $state<MdAccount | null>(null);
   let delAlsoSteam = $state(false);
   let delSteam = $state<SteamAccount | null>(null);
+  let delBatch = $state<MdAccount[] | null>(null);
+  let delBatchLogins = $state<string[]>([]);
+  let delBatchAlsoSteam = $state(false);
+  let deleteOpen = $state(false);
+  let deleteReturnTarget: HTMLElement | null = null;
+  let focusToolbarOnDeleteClose = false;
+  let toolbarFocusTarget = $state<HTMLButtonElement | null>(null);
 
-  async function openDelete(a: MdAccount) {
+  async function openDelete(a: MdAccount, trigger: HTMLElement) {
     if (await refuseIfRunning()) return;
+    focusToolbarOnDeleteClose = false;
+    deleteReturnTarget = trigger;
     delAccount = a;
+    delBatch = null;
+    delBatchLogins = [];
     delAlsoSteam = false;
     // Only offer "also forget" when the assignment resolves to a real current
     // Steam account; an unassigned or stale login shows no checkbox.
     delSteam = steamByLogin($steamAccounts, a.steamLogin) ?? null;
+    deleteOpen = true;
   }
-  function closeDelete() {
+  function closeDeleteDialog() {
+    deleteOpen = false;
     delAccount = null;
     delSteam = null;
+    delBatch = null;
+    delBatchLogins = [];
+  }
+  function onDeleteOpenChange(open: boolean) {
+    if (!open) closeDeleteDialog();
+  }
+  function onDeleteCloseAutoFocus(event: Event) {
+    event.preventDefault();
+    const target = focusToolbarOnDeleteClose
+      ? toolbarFocusTarget
+      : deleteReturnTarget;
+    focusToolbarOnDeleteClose = false;
+    deleteReturnTarget = null;
+    if (target && document.contains(target)) target.focus();
+    else toolbarFocusTarget?.focus();
   }
   async function confirmDelete() {
     const a = delAccount;
@@ -364,7 +446,8 @@
     const n = a.accountName || a.folderId;
     const both = delAlsoSteam && delSteam;
     const steamName = delSteam?.accountName;
-    closeDelete();
+    focusToolbarOnDeleteClose = true;
+    closeDeleteDialog();
     try {
       // Do the recoverable Steam forget FIRST: if it fails (e.g. Steam not
       // installed), the irreversible MD delete below never runs, so we never
@@ -443,27 +526,25 @@
   });
 
   // ---- batch delete dialog ----
-  let delBatch = $state<MdAccount[] | null>(null);
-  let delBatchLogins = $state<string[]>([]);
-  let delBatchAlsoSteam = $state(false);
-
-  async function openDeleteBatch() {
+  async function openDeleteBatch(trigger: HTMLElement) {
     if (await refuseIfRunning()) return;
     if (selected.size === 0) return;
+    focusToolbarOnDeleteClose = false;
+    deleteReturnTarget = trigger;
     delBatch = selectedAccounts;
     delBatchLogins = selectedLogins;
     delBatchAlsoSteam = false;
-  }
-  function closeDeleteBatch() {
-    delBatch = null;
-    delBatchLogins = [];
+    delAccount = null;
+    delSteam = null;
+    deleteOpen = true;
   }
   async function confirmDeleteBatch() {
     const items = delBatch;
     if (!items || !items.length) return;
     if (await refuseIfRunning()) return;
     const logins = delBatchAlsoSteam ? delBatchLogins.slice() : [];
-    closeDeleteBatch();
+    focusToolbarOnDeleteClose = true;
+    closeDeleteDialog();
     try {
       // Steam-forget runs FIRST (one invoke for all distinct logins), then the
       // irreversible per-profile MD delete loop — the same ordering the single
@@ -501,13 +582,17 @@
   let createMode = $state<"seed" | "empty">("seed");
   let createSeedId = $state<string>("");
   let seedCandidates = $state<SeedCandidate[]>([]);
+  let createReturnTarget: HTMLElement | null = null;
+  let focusToolbarOnCreateClose = false;
 
   function formatGb(bytes: number): string {
     return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
   }
 
-  async function openCreate() {
+  async function openCreate(trigger: HTMLElement) {
     if (await refuseIfRunning()) return;
+    focusToolbarOnCreateClose = false;
+    createReturnTarget = trigger;
     try {
       const candidates = await md.seedCandidates();
       // largest-first; defensive even if the backend already sorts
@@ -531,6 +616,19 @@
   function closeCreate() {
     createOpen = false;
   }
+  function onCreateOpenChange(open: boolean) {
+    if (!open) closeCreate();
+  }
+  function onCreateCloseAutoFocus(event: Event) {
+    event.preventDefault();
+    const target = focusToolbarOnCreateClose
+      ? toolbarFocusTarget
+      : createReturnTarget;
+    focusToolbarOnCreateClose = false;
+    createReturnTarget = null;
+    if (target && document.contains(target)) target.focus();
+    else toolbarFocusTarget?.focus();
+  }
   async function confirmCreate() {
     if (await refuseIfRunning()) return;
     const seed = createMode === "seed" ? createSeedId || null : null;
@@ -541,6 +639,7 @@
             return c ? c.accountName || c.folderId : seed;
           })()
         : "";
+    focusToolbarOnCreateClose = true;
     closeCreate();
     try {
       await md.createCache(seed);
@@ -597,14 +696,6 @@
     }
   }
 
-  function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      closeDelete();
-      closeDeleteBatch();
-      closeCreate();
-    }
-  }
-
   onMount(() => {
     let destroyed = false;
 
@@ -654,13 +745,11 @@
       checkRunning();
       reloadAccountsQuietly();
       runningTimer = setInterval(checkRunning, RUNNING_POLL_MS);
-      window.addEventListener("keydown", onKeydown);
     })();
 
     return () => {
       destroyed = true;
       if (runningTimer) clearInterval(runningTimer);
-      window.removeEventListener("keydown", onKeydown);
     };
   });
 </script>
@@ -673,154 +762,187 @@
   <!-- eslint-disable-next-line svelte/no-at-html-tags -->
   <p class="page-sub">{@html $t("mdSub")}</p>
 
-  <div class="pathline">
-    <span>{$t("installedAt")}</span>
-    <b>{installPath}</b>
-    <button class="copy" disabled={!installPath} onclick={copyInstallPath}>
-      <svg viewBox="0 0 24 24"
-        ><path
-          d="M16 1H4a2 2 0 00-2 2v14h2V3h12zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11z"
-        /></svg
-      ><span>{$t("copyBtn")}</span>
-    </button>
-  </div>
+  <Card.Root
+    size="sm"
+    class="mb-4 inline-flex max-w-full flex-row items-center gap-2 rounded-lg border border-border bg-muted px-2.5 py-1.5 font-mono text-[11.5px] text-muted-foreground shadow-inner"
+  >
+    <span class="shrink-0">{$t("installedAt")}</span>
+    <b class="truncate font-semibold text-foreground" title={installPath}>{installPath}</b>
+    <Button
+      variant="outline"
+      size="xs"
+      class="ml-1 shrink-0 font-mono"
+      disabled={!installPath}
+      onclick={copyInstallPath}
+    >
+      <CopyIcon data-icon="inline-start" aria-hidden="true" />
+      <span>{$t("copyBtn")}</span>
+    </Button>
+  </Card.Root>
 
   {#if cacheExists === false}
-    <div class="cache">
-      <span class="bigicon" style="opacity:.4"
-        ><svg viewBox="0 0 24 24"
-          ><path d="M4 5h16v4H4zM4 11h16v4H4zM4 17h16v3H4z" /></svg
-        ></span
-      >
-      <div class="ctext">
-        <b>{$t("cacheNoneTitle")}</b>
-        <div>{$t("cacheNoneDesc")}</div>
+    <Card.Root
+      size="sm"
+      class="mb-4 flex-row items-center gap-3 overflow-visible border border-dashed border-primary/45 bg-muted px-3.5 py-3"
+    >
+      <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary opacity-60">
+        <DatabaseIcon class="size-5" aria-hidden="true" />
+      </span>
+      <div class="min-w-0 flex-1">
+        <b class="text-[13px] text-foreground">{$t("cacheNoneTitle")}</b>
+        <div class="mt-0.5 text-[11.5px] text-muted-foreground">
+          {$t("cacheNoneDesc")}
+        </div>
       </div>
-      <button class="btn accent" disabled={running} onclick={openCreate}
-        >{$t("createBtn")}</button
+      <Button
+        disabled={running}
+        onclick={(event) => openCreate(event.currentTarget)}
       >
-    </div>
+        {$t("createBtn")}
+      </Button>
+    </Card.Root>
   {:else}
-    <div class="cache">
-      <span class="bigicon"
-        ><svg viewBox="0 0 24 24"
-          ><path d="M4 5h16v4H4zM4 11h16v4H4zM4 17h16v3H4z" /></svg
-        ></span
-      >
-      <div class="ctext">
-        <b>{$t("cacheTitle")}</b>
-        <div>{$t("cacheDesc")}</div>
+    <Card.Root
+      size="sm"
+      class="mb-4 flex-row items-center gap-3 overflow-visible border border-dashed border-[rgba(42,161,152,0.45)] bg-[rgba(42,161,152,0.06)] px-3.5 py-3"
+    >
+      <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-[rgba(42,161,152,0.16)] text-[var(--cyan)] ring-1 ring-[rgba(42,161,152,0.25)]">
+        <DatabaseIcon class="size-5" aria-hidden="true" />
+      </span>
+      <div class="min-w-0 flex-1">
+        <b class="text-[13px] text-foreground">{$t("cacheTitle")}</b>
+        <div class="mt-0.5 text-[11.5px] text-muted-foreground">
+          {$t("cacheDesc")}
+        </div>
       </div>
-      <span class="size">{cacheSizeLabel}</span>
-      <button class="btn ghost" onclick={revealCache}>{$t("revealBtn")}</button>
-    </div>
+      <span class="font-mono text-sm font-bold text-[var(--cyan)]">{cacheSizeLabel}</span>
+      <Button variant="ghost" onclick={revealCache}>
+        <FolderOpenIcon data-icon="inline-start" aria-hidden="true" />
+        {$t("revealBtn")}
+      </Button>
+    </Card.Root>
   {/if}
 
   {#if running}
-    <div class="callout danger">
-      <span class="ci"
-        ><svg viewBox="0 0 24 24" fill="var(--red)"
-          ><path
-            d="M12 2L1 21h22zM12 16a1.3 1.3 0 110 2.6A1.3 1.3 0 0112 16zm-1.1-7h2.2l-.3 5.5h-1.6z"
-          /></svg
-        ></span
-      >
+    <Card.Root
+      size="sm"
+      class="mb-4 flex-row items-start gap-3 overflow-visible border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-[12.5px] leading-relaxed"
+    >
+      <TriangleAlertIcon class="mt-0.5 size-[18px] shrink-0 text-destructive" aria-hidden="true" />
       <!-- eslint-disable-next-line svelte/no-at-html-tags -->
       <div>{@html $t("guardHtml")}</div>
-    </div>
+    </Card.Root>
   {/if}
 
-  <div class="toolbar">
-    <button class="btn" onclick={refresh}>
-      <span class="ico"
-        ><svg viewBox="0 0 24 24"
-          ><path
-            d="M17.65 6.35A8 8 0 1020 12h-2a6 6 0 11-1.76-4.24L13 11h7V4z"
-          /></svg
-        ></span
-      >
+  <div class="mb-4 flex flex-wrap items-center gap-2">
+    <Button bind:ref={toolbarFocusTarget} variant="outline" onclick={refresh}>
+      <RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
       <span>{$t("refreshBtn")}</span>
-    </button>
-    <button class="btn" onclick={openExport}>
-      <span class="ico"
-        ><svg viewBox="0 0 24 24"
-          ><path
-            d="M5 20h14v-2H5zM12 2L6.5 7.5l1.4 1.4L11 5.8V16h2V5.8l3.1 3.1 1.4-1.4z"
-          /></svg
-        ></span
-      >
+    </Button>
+    <Button variant="outline" onclick={openExport}>
+      <UploadIcon data-icon="inline-start" aria-hidden="true" />
       <span>{$t("exportBtn")}</span>
-    </button>
-    <button class="btn" disabled={running} onclick={linkAll}>
+    </Button>
+    <Button variant="outline" disabled={running} onclick={linkAll}>
       <span>{$t("linkAll")}</span>
-    </button>
-    <button class="btn" disabled={running} onclick={unlinkAll}>
+    </Button>
+    <Button variant="outline" disabled={running} onclick={unlinkAll}>
       <span>{$t("unlinkAll")}</span>
-    </button>
-    <select class="type-sel" aria-label="Sort" bind:value={sort}>
-      <option value="unlinked">{$t("sortUnlinked")}</option>
-      <option value="added">{$t("sortAdded")}</option>
-      <option value="alpha">{$t("sortAlpha")}</option>
-    </select>
-    <span class="seg" role="group" aria-label="View">
-      <button class:active={view === "list"} onclick={() => setView("list")}
-        >☰ <span>{$t("viewList")}</span></button
-      >
-      <button class:active={view === "card"} onclick={() => setView("card")}
-        >▦ <span>{$t("viewCards")}</span></button
-      >
-    </span>
-    <button
-      class="btn"
-      class:sel-active={selMode}
-      onclick={() => setSelMode(!selMode)}>{$t("select")}</button
+    </Button>
+    <NativeSelect.Root aria-label="Sort" bind:value={sort}>
+      <NativeSelect.Option value="unlinked">{$t("sortUnlinked")}</NativeSelect.Option>
+      <NativeSelect.Option value="added">{$t("sortAdded")}</NativeSelect.Option>
+      <NativeSelect.Option value="alpha">{$t("sortAlpha")}</NativeSelect.Option>
+    </NativeSelect.Root>
+    <ToggleGroup.Root
+      type="single"
+      required
+      value={view}
+      variant="outline"
+      aria-label="View"
+      onValueChange={(value) =>
+        (value === "list" || value === "card") && setView(value)}
     >
-    <span class="spacer"></span>
-    <span class="page-sub" style="margin:0">{$t("mdHint")}</span>
+      <ToggleGroup.Item value="list" aria-label={$t("viewList")}>
+        <ListIcon data-icon="inline-start" aria-hidden="true" />
+        <span>{$t("viewList")}</span>
+      </ToggleGroup.Item>
+      <ToggleGroup.Item value="card" aria-label={$t("viewCards")}>
+        <LayoutGridIcon data-icon="inline-start" aria-hidden="true" />
+        <span>{$t("viewCards")}</span>
+      </ToggleGroup.Item>
+    </ToggleGroup.Root>
+    <Button
+      variant={selMode ? "secondary" : "outline"}
+      aria-pressed={selMode}
+      onclick={() => setSelMode(!selMode)}
+    >
+      {$t("select")}
+    </Button>
+    <span class="flex-1"></span>
+    <span class="text-[12.5px] text-muted-foreground">{$t("mdHint")}</span>
   </div>
 
   {#if selMode}
-    <div class="batchbar">
-      <b>{fmt($t("selCount"), { n: selected.size })}</b>
-      <button class="btn ghost" onclick={selectAll}>{$t("selAll")}</button>
-      <button class="btn ghost" onclick={clearSel}>{$t("selNone")}</button>
-      <span class="spacer"></span>
-      <button
-        class="btn danger"
+    <Card.Root
+      size="sm"
+      class="mb-3.5 flex-row flex-wrap items-center gap-2 rounded-lg border border-dashed border-primary/45 bg-muted px-3 py-2"
+    >
+      <b class="text-[13px] text-foreground">
+        {fmt($t("selCount"), { n: selected.size })}
+      </b>
+      <Button variant="ghost" size="sm" onclick={selectAll}>{$t("selAll")}</Button>
+      <Button variant="ghost" size="sm" onclick={clearSel}>{$t("selNone")}</Button>
+      <span class="flex-1"></span>
+      <Button
+        variant="destructive"
         disabled={selected.size === 0}
-        onclick={openDeleteBatch}>{$t("delBtn")}</button
+        onclick={(event) => openDeleteBatch(event.currentTarget)}
       >
-      <button class="btn" onclick={() => setSelMode(false)}>{$t("cancel")}</button>
-    </div>
+        <Trash2Icon data-icon="inline-start" aria-hidden="true" />
+        {$t("delBtn")}
+      </Button>
+      <Button variant="outline" onclick={() => setSelMode(false)}>{$t("cancel")}</Button>
+    </Card.Root>
   {/if}
 
   {#if view === "card"}
-    <div class="grid">
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(148px,1fr))] gap-2.5">
       {#each entries as entry (("folder" in entry ? "f:" + entry.folder : "s:" + entry.single.folderId))}
         {#if "single" in entry}
           {@render mdCard(entry.single, false)}
         {:else}
           {@const open = openFolders.has(entry.folder)}
           {@const col = hue(entry.folder)}
-          <div
-            class="card folder-card"
-            style="--fc:{col}"
+          <Card.Root
+            class="cursor-pointer items-center gap-1.5 overflow-visible border px-2.5 py-4 text-center shadow-sm transition hover:-translate-y-px hover:shadow-md"
+            style={`background: color-mix(in srgb, ${col} 16%, var(--win)); border-color: color-mix(in srgb, ${col} 40%, transparent);`}
             title={$t("folderTitle")}
             role="button"
-            tabindex="0"
+            tabindex={0}
             onclick={() => toggleFolder(entry.folder)}
             onkeydown={(e) =>
               (e.key === "Enter" || e.key === " ") &&
               (e.preventDefault(), toggleFolder(entry.folder))}
           >
-            <div class="cav" style="background:{col}">
-              {initial(entry.folder)}
+            <Avatar.Root class="size-14 rounded-xl shadow-md">
+              <Avatar.Fallback
+                class="rounded-xl text-xl font-bold text-white"
+                style={`background: ${col}`}
+              >{initial(entry.folder)}</Avatar.Fallback>
+            </Avatar.Root>
+            <div class="flex items-center gap-1 text-[13px] font-bold text-foreground">
+              {#if open}
+                <ChevronDownIcon class="size-3.5" aria-hidden="true" />
+              {:else}
+                <ChevronRightIcon class="size-3.5" aria-hidden="true" />
+              {/if}
+              <span class="break-all">{entry.folder}</span>
             </div>
-            <div class="cname">{open ? "▾" : "▸"} {entry.folder}</div>
-            <div class="csub">
+            <div class="font-mono text-[10.5px] text-muted-foreground">
               {fmt($t("folderCount"), { n: entry.items.length })}
             </div>
-          </div>
+          </Card.Root>
           {#if open}
             {#each entry.items as a (a.folderId)}
               {@render mdCard(a, true, col)}
@@ -830,36 +952,46 @@
       {/each}
     </div>
   {:else}
-    <div class="list">
+    <div class="flex flex-col gap-2">
       {#each entries as entry (("folder" in entry ? "f:" + entry.folder : "s:" + entry.single.folderId))}
         {#if "single" in entry}
           {@render mdRow(entry.single, false)}
         {:else}
           {@const open = openFolders.has(entry.folder)}
-          <div
-            class="row folder"
+          <Card.Root
+            class="cursor-pointer flex-row items-center gap-3 overflow-visible border border-[rgba(108,113,196,0.35)] bg-[linear-gradient(90deg,rgba(108,113,196,0.1),rgba(108,113,196,0.02)_50%),var(--surface)] px-3.5 py-3 transition hover:-translate-y-px hover:border-[rgba(108,113,196,0.6)] hover:shadow-md"
             title={$t("folderTitle")}
             role="button"
-            tabindex="0"
+            tabindex={0}
             onclick={() => toggleFolder(entry.folder)}
             onkeydown={(e) =>
               (e.key === "Enter" || e.key === " ") &&
               (e.preventDefault(), toggleFolder(entry.folder))}
           >
-            <span class="chev">{open ? "▼" : "▶"}</span>
-            <div class="av stack">{initial(entry.folder)}</div>
-            <div class="who">
-              <div class="acct">{entry.folder}</div>
-              <div class="persona">
+            {#if open}
+              <ChevronDownIcon class="size-3 text-[var(--violet)]" aria-hidden="true" />
+            {:else}
+              <ChevronRightIcon class="size-3 text-[var(--violet)]" aria-hidden="true" />
+            {/if}
+            <Avatar.Root class="size-10 rounded-xl shadow-md">
+              <Avatar.Fallback class="rounded-xl bg-gradient-to-br from-[var(--violet)] to-[var(--blue)] text-[13.5px] font-bold text-white">
+                {initial(entry.folder)}
+              </Avatar.Fallback>
+            </Avatar.Root>
+            <div class="min-w-0">
+              <div class="truncate text-sm font-bold text-foreground">{entry.folder}</div>
+              <div class="mt-px text-xs text-muted-foreground">
                 {fmt($t("folderCount"), { n: entry.items.length })}
               </div>
             </div>
-            <div class="end">
-              <span class="pill folder"
-                >{fmt($t("folderCount"), { n: entry.items.length })}</span
-              >
-            </div>
-          </div>
+            <Badge
+              variant="secondary"
+              class="ml-auto bg-[rgba(108,113,196,0.16)] text-[var(--violet)]"
+            >
+              <FolderIcon data-icon="inline-start" aria-hidden="true" />
+              {fmt($t("folderCount"), { n: entry.items.length })}
+            </Badge>
+          </Card.Root>
           {#if open}
             {#each entry.items as a (a.folderId)}
               {@render mdRow(a, true)}
@@ -870,31 +1002,42 @@
     </div>
   {/if}
 
-  <div class="legend">
-    <span><i style="background:var(--green)"></i> <span>{$t("legendLinked")}</span></span>
-    <span><i style="background:var(--border)"></i> <span>{$t("legendNormal")}</span></span>
-    <span><i style="background:var(--violet)"></i> <span>{$t("legendFolder")}</span></span>
+  <div class="mt-4 flex flex-wrap gap-4 text-[11.5px] text-muted-foreground">
+    <span class="inline-flex items-center gap-1.5">
+      <i class="block size-2.5 rounded-[3px] bg-[var(--green)]"></i>
+      <span>{$t("legendLinked")}</span>
+    </span>
+    <span class="inline-flex items-center gap-1.5">
+      <i class="block size-2.5 rounded-[3px] bg-border"></i>
+      <span>{$t("legendNormal")}</span>
+    </span>
+    <span class="inline-flex items-center gap-1.5">
+      <i class="block size-2.5 rounded-[3px] bg-[var(--violet)]"></i>
+      <span>{$t("legendFolder")}</span>
+    </span>
   </div>
 </section>
 
 {#snippet assignSelect(a: MdAccount)}
-  <select
-    class="type-sel"
+  <NativeSelect.Root
+    size="sm"
+    class="max-w-[230px]"
     title={$t("assignTitle")}
+    aria-label={$t("assignTitle")}
     disabled={running || selMode}
     value={a.steamLogin && byLogin.has(a.steamLogin) ? a.steamLogin : ""}
     onchange={(e) =>
       assignSteam(a, (e.currentTarget as HTMLSelectElement).value)}
   >
-    <option value="">{$t("assignNone")}</option>
+    <NativeSelect.Option value="">{$t("assignNone")}</NativeSelect.Option>
     {#each $steamAccounts as s (s.accountName)}
-      <option value={s.accountName}
+      <NativeSelect.Option value={s.accountName}
         >{s.mostRecent && $steamRunning
           ? `● ${s.personaName}（${s.accountName}）· ${$t("signedIn")}`
-          : accountLabel($lang, s.personaName, s.accountName)}</option
+          : accountLabel($lang, s.personaName, s.accountName)}</NativeSelect.Option
       >
     {/each}
-  </select>
+  </NativeSelect.Root>
 {/snippet}
 
 {#snippet mdRow(a: MdAccount, child: boolean)}
@@ -902,117 +1045,99 @@
   {@const steam = assignedSteam(a)}
   {@const uri = steam ? $avatars[steam.steamId64] : null}
   {@const picked = selected.has(a.folderId)}
-  {#if selMode}
-    <div
-      class="row selectable"
-      class:is-active={a.isLinked}
-      class:child
-      class:selected={picked}
-      role="button"
-      tabindex="0"
-      onclick={() => toggleSel(a.folderId)}
-      onkeydown={(e) =>
-        (e.key === "Enter" || e.key === " ") &&
-        (e.preventDefault(), toggleSel(a.folderId))}
-    >
-      <span class="selbox">✓</span>
-      <div class="av" style="background:{hue(a.folderId)}">
-        {#if uri}
-          <img src={uri} alt="" />
-        {/if}
-        {named ? initial(a.accountName) : "#"}
-      </div>
-      <div class="who">
-        <div class="acct">
-          <span class="md-name" class:unnamed={!named}
-            >{named ? a.accountName : $t("setName")}</span
-          >
-          {#if !steam}
-            <span class="pill warn">{$t("unmatched")}</span>
-          {/if}
-        </div>
-        <div class="meta">
-          LocalData\{a.folderId}\0000 · {a.isLinked
-            ? $t("metaJunction")
-            : a.hasFiles
-              ? $t("metaOwn")
-              : $t("metaEmpty")}
-        </div>
-      </div>
-    </div>
-  {:else}
-    <div class="row" class:is-active={a.isLinked} class:child>
-      <div class="av" style="background:{hue(a.folderId)}">
-        {#if uri}
-          <img src={uri} alt="" />
-        {/if}
-        {named ? initial(a.accountName) : "#"}
-      </div>
-      <div class="who">
-        <div class="acct">
-          {#if editingId === a.folderId}
-            <!-- svelte-ignore a11y_autofocus -->
-            <input
-              class="name-input"
-              placeholder={$t("setName")}
-              bind:value={editValue}
-              autofocus
-              onblur={() => commitEdit(a)}
-              onkeydown={(e) => {
-                if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
-                if (e.key === "Escape") {
-                  editValue = a.accountName;
-                  cancelEdit();
-                }
-              }}
-            />
-          {:else}
-            <span
-              class="md-name"
-              class:unnamed={!named}
-              role="button"
-              tabindex="0"
-              onclick={() => startEdit(a)}
-              onkeydown={(e) =>
-                (e.key === "Enter" || e.key === " ") &&
-                (e.preventDefault(), startEdit(a))}
-              >{named ? a.accountName : $t("setName")}</span
-            >
-          {/if}
-          {#if !steam}
-            <span class="pill warn">{$t("unmatched")}</span>
-          {/if}
-        </div>
-        <div class="meta">
-          LocalData\{a.folderId}\0000 · {a.isLinked
-            ? $t("metaJunction")
-            : a.hasFiles
-              ? $t("metaOwn")
-              : $t("metaEmpty")}
-        </div>
-      </div>
-      <div class="end">
-        {@render assignSelect(a)}
-        <label
-          class="sw"
-          class:disabled={running}
-          title={a.isLinked ? $t("linkedTitle") : $t("linkTitle")}
-        >
-          <input
-            type="checkbox"
-            checked={a.isLinked}
-            disabled={running}
-            onchange={(e) =>
-              toggleLink(a, (e.currentTarget as HTMLInputElement).checked)}
+  <Card.Root
+    class={cn(
+      "relative flex-row items-center gap-3 overflow-visible border border-border px-3.5 py-3 shadow-sm transition hover:-translate-y-px hover:border-primary/45 hover:shadow-md",
+      a.isLinked &&
+        "border-[rgba(133,153,0,0.5)] bg-[linear-gradient(90deg,rgba(133,153,0,0.1),rgba(133,153,0,0.03)_40%),var(--win)] before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-r-sm before:bg-[var(--green)]",
+      child &&
+        "ml-[34px] after:absolute after:-left-[19px] after:top-1/2 after:h-px after:w-[13px] after:bg-border",
+      selMode && picked && "border-primary ring-2 ring-primary/25",
+    )}
+  >
+    {#if selMode}
+      <Checkbox
+        class="cursor-pointer"
+        checked={picked}
+        aria-label={a.accountName || a.folderId}
+        onCheckedChange={(checked) => checked !== picked && toggleSel(a.folderId)}
+      />
+    {/if}
+    <Avatar.Root class="size-10 rounded-xl shadow-md">
+      {#if uri}
+        <Avatar.Image class="rounded-xl" src={uri} alt="" />
+      {/if}
+      <Avatar.Fallback
+        class="rounded-xl font-bold text-white"
+        style={`background: ${hue(a.folderId)}`}
+      >{named ? initial(a.accountName) : "#"}</Avatar.Fallback>
+    </Avatar.Root>
+    <div class="min-w-0">
+      <div class="flex items-center gap-2">
+        {#if !selMode && editingId === a.folderId}
+          <Input
+            class="h-7 w-[170px] font-semibold"
+            placeholder={$t("setName")}
+            bind:value={editValue}
+            autofocus
+            onblur={() => commitEdit(a)}
+            onkeydown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                editValue = a.accountName;
+                cancelEdit();
+              }
+            }}
           />
-          <span class="track"></span><span class="knob"></span>
-        </label>
-        <button class="btn danger-line" disabled={running} onclick={() => openDelete(a)}
-          >{$t("delBtn")}</button
-        >
+        {:else if selMode}
+          <span
+            class={cn(
+              "truncate text-sm font-bold text-foreground",
+              !named && "font-medium text-muted-foreground italic",
+            )}
+          >{named ? a.accountName : $t("setName")}</span>
+        {:else}
+          <Button
+            variant="link"
+            size="sm"
+            class={cn(
+              "h-auto max-w-full justify-start truncate p-0 text-sm font-bold",
+              !named && "font-medium text-muted-foreground italic",
+            )}
+            disabled={running}
+            onclick={() => startEdit(a)}
+          >{named ? a.accountName : $t("setName")}</Button>
+        {/if}
+        {#if !steam}
+          <Badge variant="destructive">{$t("unmatched")}</Badge>
+        {/if}
+      </div>
+      <div class="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+        LocalData\{a.folderId}\0000 · {a.isLinked
+          ? $t("metaJunction")
+          : a.hasFiles
+            ? $t("metaOwn")
+            : $t("metaEmpty")}
       </div>
     </div>
-  {/if}
+    {#if !selMode}
+      <div class="ml-auto flex items-center gap-2.5">
+        {@render assignSelect(a)}
+        <Switch
+          checked={a.isLinked}
+          disabled={running}
+          title={a.isLinked ? $t("linkedTitle") : $t("linkTitle")}
+          aria-label={a.isLinked ? $t("linkedTitle") : $t("linkTitle")}
+          onCheckedChange={(checked) => toggleLink(a, checked)}
+        />
+        <Button
+          variant="destructive"
+          disabled={running}
+          onclick={(event) => openDelete(a, event.currentTarget)}
+        >{$t("delBtn")}</Button>
+      </div>
+    {/if}
+  </Card.Root>
 {/snippet}
 
 {#snippet mdCard(a: MdAccount, child: boolean, fc?: string)}
@@ -1020,216 +1145,260 @@
   {@const steam = assignedSteam(a)}
   {@const uri = steam ? $avatars[steam.steamId64] : null}
   {@const picked = selected.has(a.folderId)}
-  {#if selMode}
-    <div
-      class="card selectable"
-      class:is-linked={a.isLinked}
-      class:child-card={child}
-      class:selected={picked}
-      style={fc ? `--fc:${fc}` : undefined}
-      role="button"
-      tabindex="0"
-      onclick={() => toggleSel(a.folderId)}
-      onkeydown={(e) =>
-        (e.key === "Enter" || e.key === " ") &&
-        (e.preventDefault(), toggleSel(a.folderId))}
-    >
-      <span class="selbox">✓</span>
-      <div class="cav" style="background:{hue(a.folderId)}">
-        {#if uri}
-          <img src={uri} alt="" />
-        {/if}
-        {named ? initial(a.accountName) : "#"}
-      </div>
-      <div class="cname">{named ? a.accountName : $t("setName")}</div>
-      <div class="csub">{a.folderId}</div>
-      <div class="cfoot">
-        {#if !steam}
-          <span class="pill warn">{$t("unmatched")}</span>
-        {/if}
-      </div>
-    </div>
-  {:else}
-    <div
-      class="card"
-      class:is-linked={a.isLinked}
-      class:child-card={child}
-      style={fc ? `--fc:${fc}` : undefined}
-    >
-      <button
-        class="more"
+  <Card.Root
+    class={cn(
+      "relative items-center gap-1.5 overflow-visible border border-border px-2.5 py-4 text-center shadow-sm transition hover:-translate-y-px hover:border-primary/45 hover:shadow-md",
+      a.isLinked && "border-t-[3px] border-t-[var(--green)]",
+      child &&
+        "border-[color:color-mix(in_srgb,var(--folder-color)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--folder-color)_10%,var(--win))]",
+      selMode && picked && "border-primary ring-2 ring-primary/25",
+    )}
+    style={fc ? `--folder-color: ${fc}` : undefined}
+  >
+    {#if selMode}
+      <Checkbox
+        class="absolute top-2 left-2 cursor-pointer"
+        checked={picked}
+        aria-label={a.accountName || a.folderId}
+        onCheckedChange={(checked) => checked !== picked && toggleSel(a.folderId)}
+      />
+    {:else}
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        class="absolute top-1.5 right-1.5 text-muted-foreground"
         title={$t("delBtn")}
+        aria-label={$t("delBtn")}
         disabled={running}
-        onclick={() => openDelete(a)}>⋯</button
+        onclick={(event) => openDelete(a, event.currentTarget)}
       >
-      <div class="cav" style="background:{hue(a.folderId)}">
-        {#if uri}
-          <img src={uri} alt="" />
-        {/if}
-        {named ? initial(a.accountName) : "#"}
-      </div>
-      <div class="cname">{named ? a.accountName : $t("setName")}</div>
-      <div class="csub">{a.folderId}</div>
-      <div class="cfoot">
-        {#if !steam}
-          <span class="pill warn">{$t("unmatched")}</span>
-        {/if}
-        <label
-          class="sw"
-          class:disabled={running}
-          title={a.isLinked ? $t("linkedTitle") : $t("linkTitle")}
-        >
-          <input
-            type="checkbox"
-            checked={a.isLinked}
-            disabled={running}
-            onchange={(e) =>
-              toggleLink(a, (e.currentTarget as HTMLInputElement).checked)}
-          />
-          <span class="track"></span><span class="knob"></span>
-        </label>
-      </div>
+        <EllipsisIcon aria-hidden="true" />
+      </Button>
+    {/if}
+    <Avatar.Root class="size-14 rounded-xl shadow-md">
+      {#if uri}
+        <Avatar.Image class="rounded-xl" src={uri} alt="" />
+      {/if}
+      <Avatar.Fallback
+        class="rounded-xl text-xl font-bold text-white"
+        style={`background: ${hue(a.folderId)}`}
+      >{named ? initial(a.accountName) : "#"}</Avatar.Fallback>
+    </Avatar.Root>
+    <div
+      class={cn(
+        "break-all text-[13px] leading-tight font-bold text-foreground",
+        !named && "font-medium text-muted-foreground italic",
+      )}
+    >{named ? a.accountName : $t("setName")}</div>
+    <div class="break-all font-mono text-[10.5px] text-muted-foreground">
+      {a.folderId}
     </div>
-  {/if}
+    <div class="mt-0.5 flex min-h-5 items-center gap-2">
+      {#if !steam}
+        <Badge variant="destructive">{$t("unmatched")}</Badge>
+      {/if}
+      {#if !selMode}
+        <Switch
+          size="sm"
+          checked={a.isLinked}
+          disabled={running}
+          title={a.isLinked ? $t("linkedTitle") : $t("linkTitle")}
+          aria-label={a.isLinked ? $t("linkedTitle") : $t("linkTitle")}
+          onCheckedChange={(checked) => toggleLink(a, checked)}
+        />
+      {/if}
+    </div>
+  </Card.Root>
 {/snippet}
 
-{#if delAccount}
-  {@const a = delAccount}
-  <div
-    class="overlay"
-    role="presentation"
-    onclick={(e) => e.target === e.currentTarget && closeDelete()}
-  >
-    <div class="modal" role="dialog" aria-modal="true">
-      <h3>
-        {fmt($t("delTitle"), {
-          id: a.folderId,
-          name: a.accountName
-            ? $lang === "en"
-              ? ` (${a.accountName})`
-              : `（${a.accountName}）`
-            : "",
-        })}
-      </h3>
-      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-      <p>
-        {@html fmt($t("delBody"), {
-          id: a.folderId,
-          linked: a.isLinked ? $t("delBodyLinked") : "",
-        })}
-      </p>
-      {#if delSteam}
-        <label class="opt danger">
-          <input type="checkbox" bind:checked={delAlsoSteam} />
+<Dialog.Root bind:open={deleteOpen} onOpenChange={onDeleteOpenChange}>
+  {#if delAccount || delBatch}
+    <Dialog.Content
+      class="max-w-[min(500px,calc(100%-2rem))] gap-3 p-5"
+      onCloseAutoFocus={onDeleteCloseAutoFocus}
+    >
+      <Dialog.Header>
+        <Dialog.Title>
+          {#if delBatch}
+            {fmt($t("delTitleN"), { n: delBatch.length })}
+          {:else if delAccount}
+            {fmt($t("delTitle"), {
+              id: delAccount.folderId,
+              name: delAccount.accountName
+                ? $lang === "en"
+                  ? ` (${delAccount.accountName})`
+                  : `（${delAccount.accountName}）`
+                : "",
+            })}
+          {/if}
+        </Dialog.Title>
+        <Dialog.Description class="text-left text-[12.5px] leading-relaxed">
+          {#if delBatch}
+            {$t("delBodyN")}
+          {:else if delAccount}
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+            {@html fmt($t("delBody"), {
+              id: delAccount.folderId,
+              linked: delAccount.isLinked ? $t("delBodyLinked") : "",
+            })}
+          {/if}
+        </Dialog.Description>
+      </Dialog.Header>
+
+      {#if delBatch && delBatchLogins.length}
+        <Label
+          for="md-delete-steam-batch"
+          class="items-start rounded-lg border border-border p-3 transition-colors hover:border-destructive/45 hover:bg-destructive/5"
+        >
+          <Checkbox
+            id="md-delete-steam-batch"
+            class="mt-0.5"
+            bind:checked={delBatchAlsoSteam}
+          />
           <span>
-            <div class="ot">
+            <span class="block text-[12.5px] font-semibold text-foreground">
+              {fmt($t("delSteamLabelN"), { k: delBatchLogins.length })}
+            </span>
+            <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+              {$t("delSteamDesc")}
+            </span>
+          </span>
+        </Label>
+      {:else if delAccount && delSteam}
+        <Label
+          for="md-delete-steam-single"
+          class="items-start rounded-lg border border-border p-3 transition-colors hover:border-destructive/45 hover:bg-destructive/5"
+        >
+          <Checkbox
+            id="md-delete-steam-single"
+            class="mt-0.5"
+            bind:checked={delAlsoSteam}
+          />
+          <span>
+            <span class="block text-[12.5px] font-semibold text-foreground">
               {fmt($t("delSteamLabel"), {
                 s: accountLabel($lang, delSteam.personaName, delSteam.accountName),
               })}
-            </div>
-            <div class="od">{$t("delSteamDesc")}</div>
+            </span>
+            <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+              {$t("delSteamDesc")}
+            </span>
           </span>
-        </label>
+        </Label>
       {/if}
-      <div class="actions">
-        <button class="btn ghost" onclick={openExport}>{$t("exportFirst")}</button>
-        <span class="spacer"></span>
-        <button class="btn" onclick={closeDelete}>{$t("cancel")}</button>
-        <button class="btn danger" onclick={confirmDelete}>{$t("del")}</button>
-      </div>
-    </div>
-  </div>
-{/if}
 
-{#if delBatch}
-  {@const n = delBatch.length}
-  <div
-    class="overlay"
-    role="presentation"
-    onclick={(e) => e.target === e.currentTarget && closeDeleteBatch()}
-  >
-    <div class="modal" role="dialog" aria-modal="true">
-      <h3>{fmt($t("delTitleN"), { n })}</h3>
-      <p>{$t("delBodyN")}</p>
-      {#if delBatchLogins.length}
-        <label class="opt danger">
-          <input type="checkbox" bind:checked={delBatchAlsoSteam} />
-          <span>
-            <div class="ot">
-              {fmt($t("delSteamLabelN"), { k: delBatchLogins.length })}
-            </div>
-            <div class="od">{$t("delSteamDesc")}</div>
-          </span>
-        </label>
-      {/if}
-      <div class="actions">
-        <button class="btn ghost" onclick={openExport}>{$t("exportFirst")}</button>
-        <span class="spacer"></span>
-        <button class="btn" onclick={closeDeleteBatch}>{$t("cancel")}</button>
-        <button class="btn danger" onclick={confirmDeleteBatch}>{$t("del")}</button>
-      </div>
-    </div>
-  </div>
-{/if}
+      <Dialog.Footer class="-mx-5 -mb-5 mt-1 p-4">
+        <Button variant="ghost" class="mr-auto" onclick={openExport}>
+          <UploadIcon data-icon="inline-start" aria-hidden="true" />
+          {$t("exportFirst")}
+        </Button>
+        <Dialog.Close>
+          {#snippet child({ props })}
+            <Button {...props} variant="outline">{$t("cancel")}</Button>
+          {/snippet}
+        </Dialog.Close>
+        <Button
+          variant="destructive"
+          onclick={delBatch ? confirmDeleteBatch : confirmDelete}
+        >
+          <Trash2Icon data-icon="inline-start" aria-hidden="true" />
+          {$t("del")}
+        </Button>
+      </Dialog.Footer>
+    </Dialog.Content>
+  {/if}
+</Dialog.Root>
 
-{#if createOpen}
-  <div
-    class="overlay"
-    role="presentation"
-    onclick={(e) => e.target === e.currentTarget && closeCreate()}
+<Dialog.Root bind:open={createOpen} onOpenChange={onCreateOpenChange}>
+  <Dialog.Content
+    class="max-w-[min(500px,calc(100%-2rem))] gap-3 p-5"
+    onCloseAutoFocus={onCreateCloseAutoFocus}
   >
-    <div class="modal" role="dialog" aria-modal="true">
-      <h3>{$t("createTitle")}</h3>
-      <p>{$t("createBody")}</p>
-      <label class="opt">
-        <input
-          type="radio"
-          name="create-mode"
+    <Dialog.Header>
+      <Dialog.Title>{$t("createTitle")}</Dialog.Title>
+      <Dialog.Description class="text-left text-[12.5px] leading-relaxed">
+        {$t("createBody")}
+      </Dialog.Description>
+    </Dialog.Header>
+
+    <RadioGroup.Root
+      name="create-mode"
+      value={createMode}
+      onValueChange={(value) => {
+        if (value === "seed" || value === "empty") createMode = value;
+      }}
+    >
+      <div class="flex items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:border-primary/50 hover:bg-accent">
+        <RadioGroup.Item
+          id="md-create-seed"
           value="seed"
-          bind:group={createMode}
+          class="mt-0.5"
           disabled={seedCandidates.length === 0}
         />
-        <span>
-          <div class="ot">{$t("createSeedT")}</div>
-          <div class="od">{$t("createSeedD")}</div>
+        <div class="min-w-0 flex-1">
+          <Label for="md-create-seed" class="block cursor-pointer">
+            <span class="block text-[12.5px] font-semibold text-foreground">
+              {$t("createSeedT")}
+            </span>
+            <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+              {$t("createSeedD")}
+            </span>
+          </Label>
           {#if seedCandidates.length}
-            <select
-              class="type-sel"
-              style="margin-top:6px"
-              bind:value={createSeedId}
-            >
-              {#each seedCandidates as c (c.folderId)}
-                <option value={c.folderId}
-                  >{c.accountName || c.folderId} · {formatGb(c.sizeBytes)}</option
-                >
+            <NativeSelect.Root class="mt-2 w-full" bind:value={createSeedId}>
+              {#each seedCandidates as candidate (candidate.folderId)}
+                <NativeSelect.Option value={candidate.folderId}>
+                  {candidate.accountName || candidate.folderId} · {formatGb(candidate.sizeBytes)}
+                </NativeSelect.Option>
               {/each}
-            </select>
+            </NativeSelect.Root>
           {:else}
-            <select class="type-sel" style="margin-top:6px" disabled>
-              <option>{$t("createNoSeed")}</option>
-            </select>
+            <NativeSelect.Root class="mt-2 w-full" disabled>
+              <NativeSelect.Option>{$t("createNoSeed")}</NativeSelect.Option>
+            </NativeSelect.Root>
           {/if}
-        </span>
-      </label>
-      <label class="opt">
-        <input
-          type="radio"
-          name="create-mode"
-          value="empty"
-          bind:group={createMode}
-        />
-        <span>
-          <div class="ot">{$t("createEmptyT")}</div>
-          <div class="od">{$t("createEmptyD")}</div>
-        </span>
-      </label>
-      <div class="actions">
-        <span class="spacer"></span>
-        <button class="btn" onclick={closeCreate}>{$t("cancel")}</button>
-        <button class="btn accent" disabled={running} onclick={confirmCreate}
-          >{$t("createGo")}</button
-        >
+        </div>
       </div>
-    </div>
-  </div>
-{/if}
+      <div class="flex items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:border-primary/50 hover:bg-accent">
+        <RadioGroup.Item id="md-create-empty" value="empty" class="mt-0.5" />
+        <Label for="md-create-empty" class="block cursor-pointer">
+          <span class="block text-[12.5px] font-semibold text-foreground">
+            {$t("createEmptyT")}
+          </span>
+          <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+            {$t("createEmptyD")}
+          </span>
+        </Label>
+      </div>
+    </RadioGroup.Root>
+
+    <Dialog.Footer class="-mx-5 -mb-5 mt-1 p-4">
+      <Dialog.Close>
+        {#snippet child({ props })}
+          <Button {...props} variant="outline">{$t("cancel")}</Button>
+        {/snippet}
+      </Dialog.Close>
+      <Button disabled={running} onclick={confirmCreate}>{$t("createGo")}</Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+
+<AlertDialog.Root bind:open={forceLinkOpen} onOpenChange={onForceLinkOpenChange}>
+  <AlertDialog.Content>
+    <AlertDialog.Header>
+      <AlertDialog.Media>
+        <TriangleAlertIcon class="text-destructive" aria-hidden="true" />
+      </AlertDialog.Media>
+      <AlertDialog.Title>{forceLinkTitle}</AlertDialog.Title>
+      <AlertDialog.Description class="whitespace-pre-line">
+        {forceLinkDescription}
+      </AlertDialog.Description>
+    </AlertDialog.Header>
+    <AlertDialog.Footer>
+      <AlertDialog.Cancel>{$t("cancel")}</AlertDialog.Cancel>
+      <AlertDialog.Action variant="destructive" onclick={confirmForceLink}>
+        {$t("linkTitle")}
+      </AlertDialog.Action>
+    </AlertDialog.Footer>
+  </AlertDialog.Content>
+</AlertDialog.Root>
