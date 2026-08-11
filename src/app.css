@@ -1,3 +1,38 @@
+@import "tailwindcss";
+@import "shadcn-svelte/tailwind.css";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --color-background: var(--win);
+  --color-foreground: var(--emph);
+  --color-card: var(--win);
+  --color-card-foreground: var(--emph);
+  --color-popover: var(--win);
+  --color-popover-foreground: var(--emph);
+  --color-primary: var(--accent);
+  --color-primary-foreground: #fff;
+  --color-secondary: var(--surface);
+  --color-secondary-foreground: var(--emph);
+  --color-muted: var(--surface);
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--accent-weak);
+  --color-accent-foreground: var(--emph);
+  --color-destructive: var(--red);
+  --color-destructive-foreground: #fff;
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+  --color-sidebar: var(--surface);
+  --color-sidebar-foreground: var(--emph);
+  --color-sidebar-primary: var(--accent);
+  --color-sidebar-primary-foreground: #fff;
+  --color-sidebar-accent: var(--accent-weak);
+  --color-sidebar-accent-foreground: var(--emph);
+  --color-sidebar-border: var(--border);
+  --color-sidebar-ring: var(--accent);
+}
+
 /* ============================================================
    steam-mate — global tokens + component styles.
    Ported from the interactive prototype: Solarized base plus
@@ -36,6 +71,7 @@
   --accent: var(--blue);
   --accent-2: var(--cyan);
   --accent-weak: color-mix(in srgb, var(--accent) 10%, transparent);
+  --radius: 0.625rem;
   --ink-shadow: 0, 43, 54;
   --font-sans: Inter, "Segoe UI", "Microsoft YaHei", "Microsoft JhengHei",
     "Yu Gothic UI", Roboto, system-ui, sans-serif;
@@ -310,6 +346,18 @@
   --accent-2: #c4a7e7;
 }
 
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -342,14 +390,6 @@ body {
   background: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
-/* ---------- app shell (fills the window) ---------- */
-.app {
-  height: 100vh;
-  display: flex;
-  min-height: 0;
-  animation: win-in 0.45s cubic-bezier(0.2, 0.8, 0.25, 1) both;
-}
-
 /* ---------- app open animation ---------- */
 @keyframes win-in {
   from {
@@ -362,183 +402,23 @@ body {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .app {
+  [data-slot="sidebar-wrapper"] {
     animation: none;
   }
 }
 
-/* ---------- sidebar nav ---------- */
-.nav {
-  width: 212px;
-  flex: none;
-  background:
-    linear-gradient(180deg, var(--surface), rgba(0, 0, 0, 0) 140px),
-    var(--surface);
-  border-right: 1px solid var(--border);
-  padding: 14px 10px;
-  display: flex;
-  flex-direction: column;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 4px 8px 14px;
-}
-.brand .logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  flex: none;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  display: grid;
-  place-items: center;
-  color: #fff;
-  box-shadow:
-    0 3px 8px color-mix(in srgb, var(--accent) 35%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-.brand .logo svg {
-  width: 16px;
-  height: 16px;
-  fill: #fff;
-}
-.brand .name {
-  font-weight: 700;
-  color: var(--emph);
-  font-size: 14.5px;
-  letter-spacing: 0.01em;
-}
-.brand .ver {
-  font-size: 10.5px;
-  color: var(--muted);
-  font-family: var(--font-mono);
-}
-
-.nav-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 14px 10px 6px;
-}
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
-  border-radius: 9px;
-  color: var(--emph);
-  font-size: 13.5px;
-  cursor: pointer;
-  font-weight: 500;
-  transition:
-    background 0.14s ease,
-    color 0.14s ease,
-    transform 0.14s ease;
-  border: 1px solid transparent;
-  text-decoration: none;
-}
-.nav-item .ico {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  color: var(--muted);
-  display: grid;
-  place-items: center;
-}
-.nav-item .ico svg {
-  width: 18px;
-  height: 18px;
-  fill: currentColor;
-}
-.nav-item:hover {
-  background: var(--accent-weak);
-  transform: translateX(2px);
-}
-.nav-item.active {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #fff;
-  box-shadow:
-    0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  transform: none;
-}
-.nav-item.active .ico {
-  color: #fff;
-}
-.nav-item.sub {
-  margin-left: 6px;
-  font-size: 13px;
-}
-.nav-item .dot {
-  margin-left: auto;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--green);
-  box-shadow:
-    0 0 0 3px rgba(133, 153, 0, 0.18),
-    0 0 8px rgba(133, 153, 0, 0.55);
-}
-
-.lang-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 8px 10px;
-}
-.lang-row.first {
-  margin-top: auto;
-}
-.lang-row + .lang-row {
-  margin-top: 0;
-}
-.lang-globe {
-  width: 15px;
-  height: 15px;
-  fill: var(--muted);
-  flex: none;
-}
-.lang-sel {
-  flex: 1;
-  font-family: inherit;
-  font-size: 12px;
-  color: var(--emph);
-  background: var(--win);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 5px 8px;
-  cursor: pointer;
-  transition: border-color 0.14s;
-}
-.lang-sel:hover {
-  border-color: var(--accent);
-}
-.lang-sel:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-/* ---------- main content ---------- */
-.main {
-  flex: 1;
-  min-width: 0;
-  overflow: auto;
-  padding: 22px 26px 30px;
-}
-.main::-webkit-scrollbar {
+.shell-content::-webkit-scrollbar {
   width: 10px;
 }
-.main::-webkit-scrollbar-track {
+.shell-content::-webkit-scrollbar-track {
   background: transparent;
 }
-.main::-webkit-scrollbar-thumb {
+.shell-content::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 99px;
   border: 2px solid var(--win);
 }
-.main::-webkit-scrollbar-thumb:hover {
+.shell-content::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
 .page {
@@ -1221,57 +1101,6 @@ h2.page-title .count {
   white-space: pre;
 }
 
-/* toast */
-.toast {
-  position: fixed;
-  left: 50%;
-  bottom: 34px;
-  transform: translate(-50%, 18px);
-  opacity: 0;
-  pointer-events: none;
-  background: var(--base02);
-  color: var(--base2);
-  padding: 11px 16px;
-  border-radius: 12px;
-  font-size: 13px;
-  border-left: 3px solid var(--accent-2);
-  box-shadow: 0 16px 48px rgba(var(--ink-shadow), 0.35);
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
-  max-width: 560px;
-  z-index: 80;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.toast.show {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-.toast .sp {
-  width: 15px;
-  height: 15px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  flex: none;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.toast.ok .sp {
-  display: none;
-}
-.toast.err {
-  background: #5a1614;
-  color: #ffd9d6;
-  border-left-color: var(--red);
-}
-
 .legend {
   font-size: 11.5px;
   color: var(--muted);
@@ -1499,56 +1328,4 @@ h2.page-title .count {
   position: absolute;
   top: 8px;
   left: 8px;
-}
-
-/* ---------- signed-in chip (sidebar) ---------- */
-.me {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 2px 8px 14px;
-  padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-}
-.me-av {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  position: relative;
-  overflow: hidden;
-  flex: none;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-}
-.me-av img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.me-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.3;
-}
-.me-label {
-  font-size: 9.5px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 700;
-}
-.me-text b {
-  font-size: 12px;
-  color: var(--emph);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
