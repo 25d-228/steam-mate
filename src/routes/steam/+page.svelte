@@ -235,8 +235,11 @@
   let steamDeleteBatch = $state<string[] | null>(null);
   let steamDeleteMode = $state<"hide" | "forget">("hide");
   let steamDeleteOpen = $state(false);
+  let steamToolbarFocusTarget = $state<HTMLButtonElement | null>(null);
+  let focusSteamToolbarOnDeleteClose = false;
 
   function openSteamDelete(a: SteamAccount) {
+    focusSteamToolbarOnDeleteClose = false;
     steamDeleteAccount = a;
     steamDeleteBatch = null;
     steamDeleteMode = "hide";
@@ -244,6 +247,7 @@
   }
   function openSteamDeleteBatch() {
     if (selected.size === 0) return;
+    focusSteamToolbarOnDeleteClose = false;
     steamDeleteBatch = [...selected];
     steamDeleteAccount = null;
     steamDeleteMode = "hide";
@@ -257,6 +261,13 @@
 
   function onSteamDeleteOpenChange(open: boolean) {
     if (!open) closeSteamDelete();
+  }
+
+  function onSteamDeleteCloseAutoFocus(event: Event) {
+    if (!focusSteamToolbarOnDeleteClose) return;
+    focusSteamToolbarOnDeleteClose = false;
+    event.preventDefault();
+    steamToolbarFocusTarget?.focus();
   }
 
   function activateDialogTrigger(
@@ -273,6 +284,7 @@
     if (steamDeleteBatch) {
       const batch = steamDeleteBatch;
       const mode = steamDeleteMode;
+      focusSteamToolbarOnDeleteClose = true;
       closeSteamDelete();
       if (mode === "hide") {
         const set = new Set(hidden);
@@ -298,6 +310,7 @@
     // ---- single ----
     const a = steamDeleteAccount;
     if (!a) return;
+    focusSteamToolbarOnDeleteClose = true;
     if (steamDeleteMode === "hide") {
       if (!hidden.includes(a.accountName)) {
         hidden = [...hidden, a.accountName];
@@ -399,7 +412,7 @@
     </Card.Root>
 
     <div class="mb-4 flex flex-wrap items-center gap-2">
-      <Button variant="outline" onclick={refresh}>
+      <Button bind:ref={steamToolbarFocusTarget} variant="outline" onclick={refresh}>
         <RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
         <span>{$t("refreshBtn")}</span>
       </Button>
@@ -585,7 +598,10 @@
   </section>
 
   {#if steamDeleteAccount || steamDeleteBatch}
-    <Dialog.Content class="max-w-[min(460px,calc(100%-2rem))] gap-3 p-5">
+    <Dialog.Content
+      class="max-w-[min(460px,calc(100%-2rem))] gap-3 p-5"
+      onCloseAutoFocus={onSteamDeleteCloseAutoFocus}
+    >
       <Dialog.Header>
         <Dialog.Title>
           {#if steamDeleteBatch}
@@ -680,25 +696,16 @@
         "border-[rgba(133,153,0,0.5)] bg-[linear-gradient(90deg,rgba(133,153,0,0.1),rgba(133,153,0,0.03)_40%),var(--win)] before:absolute before:inset-y-2 before:left-0 before:w-[3px] before:rounded-r-sm before:bg-[var(--green)]",
       child &&
         "ml-[34px] after:absolute after:-left-[19px] after:top-1/2 after:h-px after:w-[13px] after:bg-border",
-      ((!active && !selMode) || selMode) && "cursor-pointer select-none",
+      !active && !selMode && "cursor-pointer select-none",
       selMode && picked && "border-primary ring-2 ring-primary/25",
     )}
     title={selMode ? undefined : active ? undefined : $t("rowTitle")}
-    role={selMode || !active ? "button" : undefined}
-    tabindex={selMode || !active ? 0 : undefined}
-    onclick={() => selMode && toggleSel(a.accountName)}
-    onkeydown={(e) =>
-      e.target === e.currentTarget &&
-      selMode &&
-      (e.key === "Enter" || e.key === " ") &&
-      (e.preventDefault(), toggleSel(a.accountName))}
     ondblclick={() => switchTo(a)}
   >
     {#if selMode}
       <Checkbox
         checked={picked}
         aria-label={a.accountName}
-        onclick={(event) => event.stopPropagation()}
         onCheckedChange={(checked) => checked !== picked && toggleSel(a.accountName)}
       />
     {/if}
@@ -758,19 +765,11 @@
       "relative items-center gap-1.5 overflow-visible border border-border px-2.5 py-4 text-center shadow-sm transition hover:-translate-y-px hover:border-primary/45 hover:shadow-md",
       active && "border-[rgba(133,153,0,0.55)] ring-2 ring-[rgba(133,153,0,0.22)]",
       child && "border-[color:color-mix(in_srgb,var(--folder-color)_30%,transparent)] bg-[color:color-mix(in_srgb,var(--folder-color)_10%,var(--win))]",
-      ((!active && !selMode) || selMode) && "cursor-pointer select-none",
+      !active && !selMode && "cursor-pointer select-none",
       selMode && picked && "border-primary ring-2 ring-primary/25",
     )}
     style={folderColor ? `--folder-color: ${folderColor}` : undefined}
     title={selMode ? undefined : active ? undefined : $t("rowTitle")}
-    role={selMode || !active ? "button" : undefined}
-    tabindex={selMode || !active ? 0 : undefined}
-    onclick={() => selMode && toggleSel(a.accountName)}
-    onkeydown={(e) =>
-      e.target === e.currentTarget &&
-      selMode &&
-      (e.key === "Enter" || e.key === " ") &&
-      (e.preventDefault(), toggleSel(a.accountName))}
     ondblclick={() => switchTo(a)}
   >
     {#if selMode}
@@ -778,7 +777,6 @@
         class="absolute top-2 left-2"
         checked={picked}
         aria-label={a.accountName}
-        onclick={(event) => event.stopPropagation()}
         onCheckedChange={(checked) => checked !== picked && toggleSel(a.accountName)}
       />
     {:else}
