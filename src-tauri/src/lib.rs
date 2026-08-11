@@ -1,5 +1,7 @@
 mod error;
 mod games;
+#[cfg(target_os = "macos")]
+mod macos_quick_switch;
 #[cfg(any(windows, target_os = "macos"))]
 mod steam;
 // The system tray drives the Steam switch flow and shows/hides the window;
@@ -26,6 +28,8 @@ fn base_builder() -> tauri::Builder<tauri::Wry> {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
+            #[cfg(target_os = "macos")]
+            macos_quick_switch::refresh();
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -88,17 +92,32 @@ pub fn run() {
         ]);
 
     #[cfg(target_os = "macos")]
-    let builder = base_builder().invoke_handler(tauri::generate_handler![
-        steam::commands::steam_get_install_path,
-        steam::commands::steam_list_accounts,
-        steam::commands::steam_clear_login,
-        steam::commands::steam_switch_account,
-        steam::commands::steam_forget_account,
-        steam::commands::steam_forget_accounts,
-        steam::commands::steam_get_avatar,
-        steam::commands::steam_is_running,
-        games::list_supported_games,
-    ]);
+    let builder = base_builder()
+        .setup(|app| {
+            macos_quick_switch::setup(app.handle())?;
+            Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Focused(true) => macos_quick_switch::refresh(),
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                // Keep the webview and native menu surfaces alive. The native
+                // "Open steam-mate" action restores this same window.
+                api.prevent_close();
+                let _ = window.hide();
+            }
+            _ => {}
+        })
+        .invoke_handler(tauri::generate_handler![
+            steam::commands::steam_get_install_path,
+            steam::commands::steam_list_accounts,
+            steam::commands::steam_clear_login,
+            steam::commands::steam_switch_account,
+            steam::commands::steam_forget_account,
+            steam::commands::steam_forget_accounts,
+            steam::commands::steam_get_avatar,
+            steam::commands::steam_is_running,
+            games::list_supported_games,
+        ]);
 
     #[cfg(not(any(windows, target_os = "macos")))]
     let builder =

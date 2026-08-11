@@ -1,10 +1,8 @@
 //! Tauri commands for Steam (list_accounts, switch_account, ...).
 
-use std::fs;
-
 use crate::error::{AppError, AppResult};
 use crate::steam::account::SteamAccount;
-use crate::steam::{avatar, platform, switch, vdf};
+use crate::steam::{account, avatar, platform, switch};
 
 /// Whether the platform Steam client is currently running.
 ///
@@ -37,13 +35,7 @@ pub async fn steam_get_install_path() -> AppResult<String> {
 /// can branch on a single, named condition.
 #[tauri::command]
 pub async fn steam_list_accounts() -> AppResult<Vec<SteamAccount>> {
-    let path = platform::steam_data_dir()?
-        .join("config")
-        .join("loginusers.vdf");
-    let text = fs::read_to_string(&path).map_err(|_| AppError::SteamNotInstalled)?;
-    let mut accounts = vdf::parse_loginusers(&text)?;
-    platform::resolve_current_account(&mut accounts);
-    Ok(accounts)
+    account::list_accounts()
 }
 
 /// Blank Steam's "remembered auto-login user" so the next launch lands at the
