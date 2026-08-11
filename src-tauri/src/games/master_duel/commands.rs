@@ -291,8 +291,8 @@ pub async fn md_export_accounts() -> AppResult<String> {
 pub async fn md_export_to_file(path: String) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         let accounts = list_accounts_blocking()?;
-        let json = serde_json::to_string_pretty(&accounts)
-            .map_err(|e| AppError::Io(e.to_string()))?;
+        let json =
+            serde_json::to_string_pretty(&accounts).map_err(|e| AppError::Io(e.to_string()))?;
         std::fs::write(Path::new(&path), json)?;
         Ok(())
     })

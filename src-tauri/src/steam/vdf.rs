@@ -43,8 +43,7 @@ fn parse_user(steam_id64: &str, obj: &Obj<'_>) -> SteamAccount {
 
 /// Parse the entire `loginusers.vdf` text into a list of [`SteamAccount`]s.
 pub fn parse_loginusers(text: &str) -> AppResult<Vec<SteamAccount>> {
-    let parsed = keyvalues_parser::parse(text)
-        .map_err(|e| AppError::VdfParse(e.to_string()))?;
+    let parsed = keyvalues_parser::parse(text).map_err(|e| AppError::VdfParse(e.to_string()))?;
     let vdf = Vdf::from(parsed);
     let users = match vdf.value {
         Value::Obj(o) => o,
@@ -97,13 +96,8 @@ fn account_name_of<'a>(user: &'a Obj<'_>) -> Option<&'a str> {
 /// all keys/values (the `BTreeMap` backing normalizes their order, which Steam
 /// doesn't care about). Errors with [`AppError::AccountNotFound`] if no block
 /// matches; we never invent accounts (the user must sign in manually first).
-pub fn set_active_account(
-    text: &str,
-    account_name: &str,
-    offline_mode: bool,
-) -> AppResult<String> {
-    let partial =
-        keyvalues_parser::parse(text).map_err(|e| AppError::VdfParse(e.to_string()))?;
+pub fn set_active_account(text: &str, account_name: &str, offline_mode: bool) -> AppResult<String> {
+    let partial = keyvalues_parser::parse(text).map_err(|e| AppError::VdfParse(e.to_string()))?;
     let mut vdf = Vdf::from(partial);
     let users = vdf
         .value
@@ -152,8 +146,7 @@ pub fn set_active_account(
 /// the `BTreeMap` while iterating it. Errors with [`AppError::AccountNotFound`]
 /// if nothing matched — we don't silently no-op.
 pub fn remove_account(text: &str, account_name: &str) -> AppResult<String> {
-    let partial =
-        keyvalues_parser::parse(text).map_err(|e| AppError::VdfParse(e.to_string()))?;
+    let partial = keyvalues_parser::parse(text).map_err(|e| AppError::VdfParse(e.to_string()))?;
     let mut vdf = Vdf::from(partial);
     let users = vdf
         .value

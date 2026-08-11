@@ -1,9 +1,6 @@
 mod error;
 mod games;
-// The Steam module reads the Windows registry (winreg) unconditionally, so it
-// only compiles on Windows. Gate it here rather than advertise a non-Windows
-// build that cannot link.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 mod steam;
 // The system tray drives the Steam switch flow and shows/hides the window;
 // Windows-only like the steam module it depends on.
@@ -37,12 +34,10 @@ fn base_builder() -> tauri::Builder<tauri::Wry> {
 /// Build, configure, and run the Tauri application.
 ///
 /// `tauri::generate_handler!` expands to a single closure and can't host a
-/// `#[cfg]` on individual commands, so the handler is registered in one of two
-/// conditionally-compiled bodies. The Steam and Master Duel commands depend on
-/// Windows-only registry/junction APIs (`winreg`/`junction`), so the Windows
-/// body registers them and the non-Windows body omits them; only the
-/// cross-platform `list_supported_games` (which returns an empty list off
-/// Windows) is registered by both bodies.
+/// `#[cfg]` on individual commands, so handlers are registered in
+/// conditionally-compiled bodies. Windows receives Steam, Master Duel, and tray
+/// commands. macOS receives Steam commands. Other targets receive only the
+/// cross-platform supported-game query.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(windows)]
@@ -92,10 +87,22 @@ pub fn run() {
             tray::app_exit,
         ]);
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     let builder = base_builder().invoke_handler(tauri::generate_handler![
+        steam::commands::steam_get_install_path,
+        steam::commands::steam_list_accounts,
+        steam::commands::steam_clear_login,
+        steam::commands::steam_switch_account,
+        steam::commands::steam_forget_account,
+        steam::commands::steam_forget_accounts,
+        steam::commands::steam_get_avatar,
+        steam::commands::steam_is_running,
         games::list_supported_games,
     ]);
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let builder =
+        base_builder().invoke_handler(tauri::generate_handler![games::list_supported_games,]);
 
     builder
         .run(tauri::generate_context!())

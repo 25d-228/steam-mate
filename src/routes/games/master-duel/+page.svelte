@@ -1,7 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { goto } from "$app/navigation";
   import { copyText } from "$lib/clipboard";
-  import { forgetAccount, forgetAccounts } from "$lib/api/steam";
+  import {
+    forgetAccount,
+    forgetAccounts,
+    listSupportedGames,
+  } from "$lib/api/steam";
   import * as md from "$lib/api/games/master-duel";
   import type { MdAccount, SteamAccount, SeedCandidate } from "$lib/api/types";
   import { asAppError } from "$lib/api/types";
@@ -601,11 +606,26 @@
   }
 
   onMount(() => {
-    if (typeof localStorage !== "undefined") {
-      const v = localStorage.getItem("sm-view-md");
-      if (v === "card" || v === "list") view = v;
-    }
     (async () => {
+      // Direct navigation can reach this route even when navigation omits it.
+      // Check the backend's compile-time support list before invoking any
+      // Windows-only Master Duel command.
+      try {
+        const supported = await listSupportedGames();
+        if (!supported.some((game) => game.id === "master_duel")) {
+          await goto("/steam", { replaceState: true });
+          return;
+        }
+      } catch {
+        await goto("/steam", { replaceState: true });
+        return;
+      }
+
+      if (typeof localStorage !== "undefined") {
+        const v = localStorage.getItem("sm-view-md");
+        if (v === "card" || v === "list") view = v;
+      }
+
       try {
         // The game can live in any Steam library, so ask the backend for the
         // real install dir rather than assuming the primary Steam root.
@@ -613,20 +633,18 @@
       } catch {
         // pathline just stays empty
       }
-    })();
-    (async () => {
       try {
         cacheBytes = await md.cacheSize();
       } catch (e) {
         toastError(e);
       }
+      checkCacheExists();
+      ensureSteamAccounts();
+      checkRunning();
+      reloadAccountsQuietly();
+      runningTimer = setInterval(checkRunning, RUNNING_POLL_MS);
+      window.addEventListener("keydown", onKeydown);
     })();
-    checkCacheExists();
-    ensureSteamAccounts();
-    checkRunning();
-    reloadAccountsQuietly();
-    runningTimer = setInterval(checkRunning, RUNNING_POLL_MS);
-    window.addEventListener("keydown", onKeydown);
   });
   onDestroy(() => {
     if (runningTimer) clearInterval(runningTimer);

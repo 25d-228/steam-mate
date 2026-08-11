@@ -15,18 +15,6 @@
         "title": "steam-mate",
         "width": 800,
         "height": 600
-      },
-      {
-        "label": "tray",
-        "url": "/tray",
-        "width": 320,
-        "height": 440,
-        "visible": false,
-        "decorations": false,
-        "resizable": false,
-        "skipTaskbar": true,
-        "alwaysOnTop": true,
-        "focus": false
       }
     ],
     "security": {

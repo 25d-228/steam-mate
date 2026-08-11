@@ -77,7 +77,10 @@ pub fn get_avatar(steam_id64: &str) -> AppResult<Option<String>> {
     };
 
     // Download the image, reading at most MAX_AVATAR_BYTES + 1 to detect overflow.
-    let resp = match ureq::get(&avatar_url).timeout(Duration::from_secs(5)).call() {
+    let resp = match ureq::get(&avatar_url)
+        .timeout(Duration::from_secs(5))
+        .call()
+    {
         Ok(r) => r,
         Err(_) => return Ok(None),
     };
@@ -125,7 +128,10 @@ mod tests {
 
     #[test]
     fn missing_open_marker_yields_none() {
-        assert_eq!(extract_avatar_url("<profile>no avatar here</profile>"), None);
+        assert_eq!(
+            extract_avatar_url("<profile>no avatar here</profile>"),
+            None
+        );
     }
 
     #[test]

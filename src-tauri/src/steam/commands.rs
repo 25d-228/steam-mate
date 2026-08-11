@@ -4,7 +4,7 @@ use std::fs;
 
 use crate::error::{AppError, AppResult};
 use crate::steam::account::SteamAccount;
-use crate::steam::{avatar, paths, process, registry, switch, vdf};
+use crate::steam::{avatar, platform, switch, vdf};
 
 /// Whether `Steam.exe` is currently running.
 ///
@@ -13,44 +13,45 @@ use crate::steam::{avatar, paths, process, registry, switch, vdf};
 /// session — so they go neutral when this returns false.
 #[tauri::command]
 pub async fn steam_is_running() -> AppResult<bool> {
-    tauri::async_runtime::spawn_blocking(process::is_steam_running)
+    tauri::async_runtime::spawn_blocking(platform::is_steam_running)
         .await
         .map_err(|e| AppError::Io(e.to_string()))
 }
 
 /// Return Steam's install directory as a string.
 ///
-/// Backed by `paths::get_steam_install_path`. Errors with
+/// Backed by the platform Steam data-directory discovery. Errors with
 /// `AppError::SteamNotInstalled` if Steam isn't installed.
 #[tauri::command]
 pub async fn steam_get_install_path() -> AppResult<String> {
-    let path = paths::get_steam_install_path()?;
+    let path = platform::steam_data_dir()?;
     Ok(path.to_string_lossy().into_owned())
 }
 
 /// Return the list of remembered Steam accounts from `loginusers.vdf`.
 ///
-/// Locates the file via [`paths::loginusers_vdf_path`], reads it, and
+/// Locates the file below the platform Steam data directory, reads it, and
 /// hands the text to [`vdf::parse_loginusers`]. A missing file is
 /// reported as [`AppError::SteamNotInstalled`] rather than a raw IO
 /// error so the frontend can branch on a single, named condition.
 #[tauri::command]
 pub async fn steam_list_accounts() -> AppResult<Vec<SteamAccount>> {
-    let path = paths::loginusers_vdf_path()?;
-    let text = fs::read_to_string(&path)
-        .map_err(|_| AppError::SteamNotInstalled)?;
+    let path = platform::steam_data_dir()?
+        .join("config")
+        .join("loginusers.vdf");
+    let text = fs::read_to_string(&path).map_err(|_| AppError::SteamNotInstalled)?;
     vdf::parse_loginusers(&text)
 }
 
 /// Blank Steam's "remembered auto-login user" so the next launch lands at the
 /// login screen.
 ///
-/// Thin wrapper over [`registry::clear_auto_login_user`]. Doesn't touch
+/// Thin wrapper over the platform auto-login store. Doesn't touch
 /// `loginusers.vdf` or kill Steam — Steam picks up the change on its own
 /// next start.
 #[tauri::command]
 pub async fn steam_clear_login() -> AppResult<()> {
-    registry::clear_auto_login_user()
+    platform::clear_auto_login_user()
 }
 
 /// Switch the active Steam account to `account_name`, optionally launching offline.
