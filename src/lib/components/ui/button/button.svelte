@@ -34,6 +34,8 @@
 	type ButtonVariant = VariantProps<typeof buttonVariants>["variant"];
 	type ButtonSize = VariantProps<typeof buttonVariants>["size"];
 
+	export { buttonVariants, type ButtonVariant, type ButtonSize };
+
 	type ButtonProps = WithElementRef<HTMLButtonAttributes> &
 		WithElementRef<HTMLAnchorAttributes> & {
 			variant?: ButtonVariant;
