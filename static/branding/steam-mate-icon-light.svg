@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 340" width="340" height="340">
+  <title>steam-mate-icon-light</title>
+
+  <!-- 1. canvas -->
+  <rect width="340" height="340" rx="16" ry="16" fill="#E9D7C2"/>
+
+  <!-- 2. glyph: handheld console — one silhouette, screen and buttons punched through -->
+  <g transform="translate(0, 0)"
+     fill="none" stroke="#3D3D3D" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 104 116 H 236 A 48 48 0 0 1 284 164 V 176 A 48 48 0 0 1 236 224 H 104 A 48 48 0 0 1 56 176 V 164 A 48 48 0 0 1 104 116 Z M 130 144 H 210 A 18 18 0 0 1 228 162 V 178 A 18 18 0 0 1 210 196 H 130 A 18 18 0 0 1 112 178 V 162 A 18 18 0 0 1 130 144 Z M 73 170 A 13 13 0 1 0 99 170 A 13 13 0 1 0 73 170 Z M 241 170 A 13 13 0 1 0 267 170 A 13 13 0 1 0 241 170 Z" fill="#3D3D3D" fill-rule="evenodd" stroke="none"/>
+  </g>
+
+  <!-- 3. mascot: same place in every icon, never moved or resized -->
+  <g transform="translate(190, 180)" shape-rendering="crispEdges">
+    <rect x="0"   y="0"  width="30"  height="30" fill="#1A1A1A"/>
+    <rect x="90"  y="0"  width="30"  height="30" fill="#1A1A1A"/>
+    <rect x="15"  y="15" width="15"  height="15" fill="#F5A5B8"/>
+    <rect x="90"  y="15" width="15"  height="15" fill="#F5A5B8"/>
+    <rect x="0"   y="30" width="120" height="30" fill="#1A1A1A"/>
+    <rect x="30"  y="45" width="15"  height="15" fill="#FFFFFF"/>
+    <rect x="75"  y="45" width="15"  height="15" fill="#FFFFFF"/>
+    <rect x="0"   y="60" width="120" height="30" fill="#FFFFFF"/>
+    <rect x="0"   y="60" width="15"  height="15" fill="#1A1A1A"/>
+    <rect x="105" y="60" width="15"  height="15" fill="#1A1A1A"/>
+    <rect x="30"  y="60" width="15"  height="15" fill="#0A0A0A"/>
+    <rect x="75"  y="60" width="15"  height="15" fill="#0A0A0A"/>
+    <rect x="30"  y="90" width="60"  height="30" fill="#FFFFFF"/>
+    <rect x="15"  y="90" width="15"  height="15" fill="#1A1A1A"/>
+    <rect x="90"  y="90" width="15"  height="15" fill="#1A1A1A"/>
+    <rect x="52"  y="96" width="16"  height="10" fill="#0A0A0A"/>
+  </g>
+</svg>

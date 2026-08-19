@@ -488,8 +488,8 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn Error>> {
             }
         });
     if let Some(icon) = app.default_window_icon() {
-        // The current icon has an opaque dark tile, so treating it as a
-        // monochrome template would collapse it into an unreadable block.
+        // The approved icon is multicolor with an opaque tile, so treating it
+        // as a monochrome template would collapse it into an unreadable block.
         builder = builder.icon(icon.clone());
     }
     let tray = builder.build(app)?;
